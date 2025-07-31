@@ -1,0 +1,48 @@
+# Node dependencies
+/node_modules/
+npm-debug.log
+yarn-error.log
+
+# Composer dependencies
+/vendor/
+
+# Laravel storage and environment
+/storage/
+storage/*.key
+.env
+.env.*
+!.env.example
+
+# Laravel specific (all versions)
+/bootstrap/cache/
+public/storage
+public/hot
+/public/build
+
+# Alternate public path (if using public_html)
+public_html/storage
+public_html/hot
+
+# PHPUnit & test artifacts
+.phpunit.result.cache
+.phpunit.cache
+/.phpunit.cache
+
+# IDE & Editor folders
+/.idea/
+/.vscode/
+/.fleet/
+
+# Homestead & Vagrant
+Homestead.yaml
+Homestead.json
+/.vagrant/
+
+# PHP tooling
+.phpactor.json
+auth.json
+
+# Backup files
+.env.backup
+.env.production
+.env.test

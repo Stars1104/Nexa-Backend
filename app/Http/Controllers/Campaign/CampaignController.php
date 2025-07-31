@@ -1,0 +1,883 @@
+<?php
+
+namespace App\Http\Controllers\Campaign;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Campaign\StoreCampaignRequest;
+use App\Http\Requests\Campaign\UpdateCampaignRequest;
+use App\Models\Campaign;
+use App\Models\User;
+use App\Services\NotificationService;
+use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
+
+use function Laravel\Prompts\error;
+
+class CampaignController extends Controller
+{
+    /**
+     * Display a listing of campaigns with role-based filtering.
+     */
+    public function index(Request $request): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+            $query = Campaign::with(['brand', 'creator', 'bids']);
+
+            error_log("Request" . json_encode($request));
+
+            // Apply role-based filtering
+            if ($user->isCreator()) {
+                // Creators see only approved and active campaigns
+                $query->approved()->active();
+            } elseif ($user->isBrand()) {
+                // Brands see only their own campaigns
+                $query->where('brand_id', $user->id);
+            } elseif ($user->isAdmin()) {
+                // Admin sees all campaigns
+                // No additional filters needed
+            } else {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+
+            // Apply additional filters
+            if ($request->has('status')) {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->has('category')) {
+                $query->byCategory($request->category);
+            }
+
+            if ($request->has('campaign_type')) {
+                $query->byType($request->campaign_type);
+            }
+
+            if ($request->has('state')) {
+                $query->forState($request->state);
+            }
+
+            if ($request->has('budget_min')) {
+                $query->where('budget', '>=', $request->budget_min);
+            }
+
+            if ($request->has('budget_max')) {
+                $query->where('budget', '<=', $request->budget_max);
+            }
+
+            if ($request->has('deadline_from')) {
+                $query->where('deadline', '>=', $request->deadline_from);
+            }
+
+            if ($request->has('deadline_to')) {
+                $query->where('deadline', '<=', $request->deadline_to);
+            }
+
+            // Search functionality
+            if ($request->has('search')) {
+                $search = $request->search;
+                $query->where(function ($q) use ($search) {
+                    $q->where('title', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%")
+                        ->orWhere('requirements', 'like', "%{$search}%");
+                });
+            }
+
+            // Sorting
+            $sortBy = $request->get('sort_by', 'created_at');
+            $sortOrder = $request->get('sort_order', 'desc');
+            $query->orderBy($sortBy, $sortOrder);
+
+            $perPage = min($request->get('per_page', 15), 100); // Max 100 items per page
+            $campaigns = $query->paginate($perPage);
+
+            return response()->json([
+                'success' => true,
+                'data' => $campaigns->items(),
+                'pagination' => [
+                    'current_page' => $campaigns->currentPage(),
+                    'last_page' => $campaigns->lastPage(),
+                    'per_page' => $campaigns->perPage(),
+                    'total' => $campaigns->total(),
+                    'from' => $campaigns->firstItem(),
+                    'to' => $campaigns->lastItem(),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to retrieve campaigns: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to retrieve campaigns',
+                'message' => 'An error occurred while retrieving campaigns'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get campaigns with advanced filtering (alias for index).
+     */
+    public function getCampaigns(Request $request): JsonResponse
+    {
+        return $this->index($request);
+    }
+
+    /**
+     * Get all campaigns without pagination.
+     */
+    public function getAllCampaigns(Request $request): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+            $query = Campaign::with(['brand', 'approvedBy', 'bids']);
+
+            // Apply role-based filtering
+            if ($user->isCreator()) {
+                $query->approved()->active();
+            } elseif ($user->isBrand()) {
+                $query->where('brand_id', $user->id);
+            } elseif ($user->isAdmin()) {
+                // Admin sees all campaigns
+            } else {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+
+            // Apply filters
+            if ($request->has('status')) {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->has('category')) {
+                $query->byCategory($request->category);
+            }
+
+            if ($request->has('campaign_type')) {
+                $query->byType($request->campaign_type);
+            }
+
+            $campaigns = $query->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $campaigns,
+                'count' => $campaigns->count()
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to retrieve all campaigns: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to retrieve campaigns',
+                'message' => 'An error occurred while retrieving campaigns'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get pending campaigns (Admin only).
+     */
+    public function getPendingCampaigns(Request $request): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            if (!$user->isAdmin()) {
+                return response()->json(['error' => 'Unauthorized. Admin access required.'], 403);
+            }
+
+            $query = Campaign::with(['brand', 'bids'])->pending();
+
+            // Apply additional filters
+            if ($request->has('category')) {
+                $query->byCategory($request->category);
+            }
+
+            if ($request->has('campaign_type')) {
+                $query->byType($request->campaign_type);
+            }
+
+            // Search functionality
+            if ($request->has('search')) {
+                $search = $request->search;
+                $query->where(function ($q) use ($search) {
+                    $q->where('title', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%");
+                });
+            }
+
+            $perPage = min($request->get('per_page', 15), 100);
+            $campaigns = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+            return response()->json([
+                'success' => true,
+                'data' => $campaigns->items(),
+                'pagination' => [
+                    'current_page' => $campaigns->currentPage(),
+                    'last_page' => $campaigns->lastPage(),
+                    'per_page' => $campaigns->perPage(),
+                    'total' => $campaigns->total(),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to retrieve pending campaigns: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to retrieve pending campaigns',
+                'message' => 'An error occurred while retrieving pending campaigns'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get campaigns by specific user.
+     */
+    public function getUserCampaigns(User $user, Request $request): JsonResponse
+    {
+        try {
+            $authUser = auth()->user();
+
+            // Check authorization
+            if (!$authUser->isAdmin() && $authUser->id !== $user->id) {
+                return response()->json(['error' => 'Unauthorized to view other user campaigns'], 403);
+            }
+
+            $query = Campaign::with(['brand', 'approvedBy', 'bids'])
+                ->where('brand_id', $user->id);
+
+            // Apply filters
+            if ($request->has('status')) {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->has('category')) {
+                $query->byCategory($request->category);
+            }
+
+            $perPage = min($request->get('per_page', 15), 100);
+            $campaigns = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+            return response()->json([
+                'success' => true,
+                'data' => $campaigns->items(),
+                'pagination' => [
+                    'current_page' => $campaigns->currentPage(),
+                    'last_page' => $campaigns->lastPage(),
+                    'per_page' => $campaigns->perPage(),
+                    'total' => $campaigns->total(),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to retrieve user campaigns: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to retrieve user campaigns',
+                'message' => 'An error occurred while retrieving user campaigns'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get campaigns by status.
+     */
+
+    public function getCampaignsByStatus(string $status, Request $request): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            // Validate status
+            $validStatuses = ['pending', 'approved', 'rejected', 'completed', 'cancelled'];
+            if (!in_array($status, $validStatuses)) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Invalid status',
+                    'message' => 'Status must be one of: ' . implode(', ', $validStatuses)
+                ], 400);
+            }
+
+            // Eager load only valid relationships
+            $query = Campaign::with(['brand', 'bids']);
+
+            // Role-based access control
+            if ($user->isCreator()) {
+                if ($status !== 'approved') {
+                    return response()->json([
+                        'success' => false,
+                        'error' => 'Unauthorized',
+                        'message' => 'Creators can only view approved campaigns.'
+                    ], 403);
+                }
+
+                $query->approved();
+            } elseif ($user->isBrand()) {
+                $query->where('brand_id', $user->id)
+                    ->where('status', $status);
+            } elseif ($user->isAdmin()) {
+                $query->where('status', $status);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Unauthorized',
+                    'message' => 'User role not authorized.'
+                ], 403);
+            }
+
+            // Filtering
+            if ($request->filled('category')) {
+                $query->byCategory($request->category);
+            }
+
+            if ($request->filled('campaign_type')) {
+                $query->byType($request->campaign_type);
+            }
+
+            if ($request->filled('state')) {
+                $query->forState($request->state);
+            }
+
+            if ($request->filled('budget_min')) {
+                $query->where('budget', '>=', $request->budget_min);
+            }
+
+            if ($request->filled('budget_max')) {
+                $query->where('budget', '<=', $request->budget_max);
+            }
+
+            if ($request->filled('deadline_from')) {
+                $query->where('deadline', '>=', $request->deadline_from);
+            }
+
+            if ($request->filled('deadline_to')) {
+                $query->where('deadline', '<=', $request->deadline_to);
+            }
+
+            // Search
+            if ($request->filled('search')) {
+                $search = $request->search;
+                $query->where(function ($q) use ($search) {
+                    $q->where('title', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%")
+                        ->orWhere('requirements', 'like', "%{$search}%");
+                });
+            }
+
+            // Sorting
+            $sortBy = $request->get('sort_by', 'created_at');
+            $sortOrder = $request->get('sort_order', 'desc');
+            $query->orderBy($sortBy, $sortOrder);
+
+            // Pagination
+            $perPage = min($request->get('per_page', 15), 100);
+            $campaigns = $query->paginate($perPage);
+
+            // Log campaigns data for debugging
+            Log::info('Campaigns retrieved', [
+                'status' => $status,
+                'user_role' => $user->role,
+                'total_campaigns' => $campaigns->total(),
+                'current_page' => $campaigns->currentPage()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'data' => $campaigns->items(),
+                'meta' => [
+                    'status' => $status,
+                    'user_role' => $user->role ?? 'unknown',
+                    'total' => $campaigns->total(),
+                    'current_page' => $campaigns->currentPage(),
+                    'last_page' => $campaigns->lastPage(),
+                    'per_page' => $campaigns->perPage(),
+                    'from' => $campaigns->firstItem(),
+                    'to' => $campaigns->lastItem(),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to retrieve campaigns: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Server Error',
+                'message' => $e->getMessage(), // Consider hiding this in production
+            ], 500);
+        }
+    }
+
+    /**
+     * Store a newly created campaign.
+     */
+    public function store(StoreCampaignRequest $request): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            if (!$user->isBrand()) {
+                return response()->json(['error' => 'Only brands can create campaigns'], 403);
+            }
+
+            $data = $request->validated();
+            $data['brand_id'] = $user->id;
+            $data['status'] = 'pending';
+            $data['is_active'] = true;
+            $data['location'] = $request->locations;
+
+            // Handle file uploads
+            if ($request->hasFile('image')) {
+                $data['image_url'] = $this->uploadFile($request->file('image'), 'campaigns/images');
+            }
+
+            if ($request->hasFile('logo')) {
+                $data['logo'] = $this->uploadFile($request->file('logo'), 'campaigns/logos');
+            }
+
+            if ($request->hasFile('attach_file')) {
+                $data['attach_file'] = $this->uploadFile($request->file('attach_file'), 'campaigns/attachments');
+            }
+            $campaign = Campaign::create($data);
+
+            // Notify admin of new campaign creation
+            \App\Services\NotificationService::notifyAdminOfNewCampaign($campaign);
+
+            // Notify creators about new project (only when approved)
+            // This will be called when admin approves the campaign
+            // NotificationService::notifyCreatorsOfNewProject($campaign);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Campaign created successfully and is pending approval',
+                'data' => $campaign->load(['brand', 'bids'])
+            ], 201);
+        } catch (\Exception $e) {
+            Log::error('Failed to create campaign: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to create campaign',
+                'message' => 'An error occurred while creating the campaign'
+            ], 500);
+        }
+    }
+
+    /**
+     * Display the specified campaign.
+     */
+    public function show(Campaign $campaign): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            // Check authorization
+            if ($user->isCreator()) {
+                // Creators can only see approved and active campaigns
+                if (!$campaign->isApproved() || !$campaign->is_active) {
+                    return response()->json(['error' => 'Campaign not found or not available'], 404);
+                }
+            } elseif ($user->isBrand()) {
+                // Brands can only see their own campaigns
+                if ($campaign->brand_id !== $user->id) {
+                    return response()->json(['error' => 'Unauthorized to view this campaign'], 403);
+                }
+            } elseif (!$user->isAdmin()) {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+
+            $campaign->load(['brand', 'approvedBy', 'bids.user']);
+
+            return response()->json([
+                'success' => true,
+                'data' => $campaign
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to retrieve campaign: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to retrieve campaign',
+                'message' => 'An error occurred while retrieving the campaign'
+            ], 500);
+        }
+    }
+
+    /**
+     * Update the specified campaign.
+     */
+    public function update(UpdateCampaignRequest $request, Campaign $campaign): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            // Check authorization
+            if (!$user->isBrand() || $campaign->brand_id !== $user->id) {
+                return response()->json(['error' => 'Unauthorized to update this campaign'], 403);
+            }
+
+            // Check if campaign can be updated
+            if ($campaign->isApproved()) {
+                return response()->json(['error' => 'Cannot update approved campaigns'], 422);
+            }
+
+            $data = $request->validated();
+
+            // Handle file uploads
+            if ($request->hasFile('image')) {
+                // Delete old image if exists
+                if ($campaign->image_url) {
+                    $this->deleteFile($campaign->image_url);
+                }
+                $data['image_url'] = $this->uploadFile($request->file('image'), 'campaigns/images');
+            }
+
+            if ($request->hasFile('logo')) {
+                // Delete old logo if exists
+                if ($campaign->logo) {
+                    $this->deleteFile($campaign->logo);
+                }
+                $data['logo'] = $this->uploadFile($request->file('logo'), 'campaigns/logos');
+            }
+
+            if ($request->hasFile('attach_file')) {
+                // Delete old attachment if exists
+                if ($campaign->attach_file) {
+                    $this->deleteFile($campaign->attach_file);
+                }
+                $data['attach_file'] = $this->uploadFile($request->file('attach_file'), 'campaigns/attachments');
+            }
+
+            $campaign->update($data);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Campaign updated successfully',
+                'data' => $campaign->load(['brand', 'bids'])
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to update campaign: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to update campaign',
+                'message' => 'An error occurred while updating the campaign'
+            ], 500);
+        }
+    }
+
+    /**
+     * Remove the specified campaign.
+     */
+    public function destroy(Campaign $campaign): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            // Check authorization
+            if (!$user->isBrand() || $campaign->brand_id !== $user->id) {
+                return response()->json(['error' => 'Unauthorized to delete this campaign'], 403);
+            }
+
+            // Check if campaign can be deleted
+            if ($campaign->isApproved() && $campaign->bids()->count() > 0) {
+                return response()->json(['error' => 'Cannot delete approved campaigns with bids'], 422);
+            }
+
+            // Delete associated files
+            if ($campaign->image_url) {
+                $this->deleteFile($campaign->image_url);
+            }
+            if ($campaign->logo) {
+                $this->deleteFile($campaign->logo);
+            }
+            if ($campaign->attach_file) {
+                $this->deleteFile($campaign->attach_file);
+            }
+
+            $campaign->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Campaign deleted successfully'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to delete campaign: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to delete campaign',
+                'message' => 'An error occurred while deleting the campaign'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get campaign statistics.
+     */
+    public function statistics(Request $request): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+            $query = Campaign::query();
+
+            // Apply role-based filtering
+            if ($user->isCreator()) {
+                // Creators see statistics for approved campaigns they can bid on
+                $query->approved()->active();
+            } elseif ($user->isBrand()) {
+                // Brands see statistics for their own campaigns
+                $query->where('brand_id', $user->id);
+            } elseif ($user->isAdmin()) {
+                // Admin sees all statistics
+                // No additional filters needed
+            } else {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+
+            $statistics = [
+                'total_campaigns' => $query->count(),
+                'pending_campaigns' => (clone $query)->where('status', 'pending')->count(),
+                'approved_campaigns' => (clone $query)->where('status', 'approved')->count(),
+                'rejected_campaigns' => (clone $query)->where('status', 'rejected')->count(),
+                'completed_campaigns' => (clone $query)->where('status', 'completed')->count(),
+                'cancelled_campaigns' => (clone $query)->where('status', 'cancelled')->count(),
+                'active_campaigns' => (clone $query)->where('is_active', true)->count(),
+                'total_bids' => (clone $query)->withCount('bids')->get()->sum('bids_count'),
+                'accepted_bids' => (clone $query)->whereHas('bids', function ($q) {
+                    $q->where('status', 'accepted');
+                })->count(),
+            ];
+
+            // Add budget statistics
+            $budgetStats = (clone $query)->selectRaw('
+                COUNT(*) as total,
+                SUM(budget) as total_budget,
+                AVG(budget) as avg_budget,
+                MIN(budget) as min_budget,
+                MAX(budget) as max_budget
+            ')->first();
+
+            $statistics['budget'] = [
+                'total_budget' => $budgetStats->total_budget ?? 0,
+                'average_budget' => $budgetStats->avg_budget ?? 0,
+                'min_budget' => $budgetStats->min_budget ?? 0,
+                'max_budget' => $budgetStats->max_budget ?? 0,
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $statistics
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to retrieve statistics: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to retrieve statistics',
+                'message' => 'An error occurred while retrieving statistics'
+            ], 500);
+        }
+    }
+
+    /**
+     * Approve a campaign (Admin only).
+     */
+    public function approve(Campaign $campaign): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            if (!$user->isAdmin()) {
+                return response()->json(['error' => 'Unauthorized. Admin access required.'], 403);
+            }
+
+            if (!$campaign->isPending()) {
+                return response()->json(['error' => 'Only pending campaigns can be approved'], 422);
+            }
+
+            $campaign->approve($user->id);
+
+            // Notify admin of campaign approval
+            \App\Services\NotificationService::notifyAdminOfSystemActivity('campaign_approved', [
+                'campaign_id' => $campaign->id,
+                'campaign_title' => $campaign->title,
+                'brand_name' => $campaign->brand->name,
+                'approved_by' => $user->name,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Campaign approved successfully',
+                'data' => $campaign->load(['brand', 'approvedBy'])
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to approve campaign: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to approve campaign',
+                'message' => 'An error occurred while approving the campaign'
+            ], 500);
+        }
+    }
+
+    /**
+     * Reject a campaign (Admin only).
+     */
+    public function reject(Request $request, Campaign $campaign): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            if (!$user->isAdmin()) {
+                return response()->json(['error' => 'Unauthorized. Admin access required.'], 403);
+            }
+
+            if (!$campaign->isPending()) {
+                return response()->json(['error' => 'Only pending campaigns can be rejected'], 422);
+            }
+
+            $request->validate([
+                'rejection_reason' => 'nullable|string|max:1000'
+            ]);
+
+            $campaign->reject($user->id, $request->rejection_reason);
+
+            // Notify admin of campaign rejection
+            \App\Services\NotificationService::notifyAdminOfSystemActivity('campaign_rejected', [
+                'campaign_id' => $campaign->id,
+                'campaign_title' => $campaign->title,
+                'brand_name' => $campaign->brand->name,
+                'rejected_by' => $user->name,
+                'rejection_reason' => $request->rejection_reason,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Campaign rejected successfully',
+                'data' => $campaign->load(['brand', 'approvedBy'])
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Failed to reject campaign: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to reject campaign',
+                'message' => 'An error occurred while rejecting the campaign'
+            ], 500);
+        }
+    }
+
+    /**
+     * Archive a campaign.
+     */
+    public function archive(Campaign $campaign): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            // Check authorization
+            if (!$user->isAdmin() && ($user->isBrand() && $campaign->brand_id !== $user->id)) {
+                return response()->json(['error' => 'Unauthorized to archive this campaign'], 403);
+            }
+
+            if ($campaign->isCompleted() || $campaign->isCancelled()) {
+                return response()->json(['error' => 'Campaign is already archived'], 422);
+            }
+
+            $campaign->update([
+                'is_active' => false,
+                'status' => 'cancelled'
+            ]);
+
+            // Notify admin of campaign archiving
+            \App\Services\NotificationService::notifyAdminOfSystemActivity('campaign_archived', [
+                'campaign_id' => $campaign->id,
+                'campaign_title' => $campaign->title,
+                'brand_name' => $campaign->brand->name,
+                'archived_by' => $user->name,
+                'archived_by_role' => $user->role,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Campaign archived successfully',
+                'data' => $campaign->load(['brand'])
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to archive campaign: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to archive campaign',
+                'message' => 'An error occurred while archiving the campaign'
+            ], 500);
+        }
+    }
+
+    /**
+     * Toggle active status of a campaign (Brand only).
+     */
+    public function toggleActive(Campaign $campaign): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            if (!$user->isBrand() || $campaign->brand_id !== $user->id) {
+                return response()->json(['error' => 'Unauthorized to modify this campaign'], 403);
+            }
+
+            if (!$campaign->isApproved()) {
+                return response()->json(['error' => 'Only approved campaigns can be toggled'], 422);
+            }
+
+            $campaign->update(['is_active' => !$campaign->is_active]);
+
+            $status = $campaign->is_active ? 'activated' : 'deactivated';
+
+            // Notify admin of campaign status toggle
+            \App\Services\NotificationService::notifyAdminOfSystemActivity('campaign_status_toggled', [
+                'campaign_id' => $campaign->id,
+                'campaign_title' => $campaign->title,
+                'brand_name' => $campaign->brand->name,
+                'new_status' => $status,
+                'toggled_by' => $user->name,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Campaign {$status} successfully",
+                'data' => $campaign->load(['brand'])
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to toggle campaign active status: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to toggle campaign status',
+                'message' => 'An error occurred while toggling the campaign status'
+            ], 500);
+        }
+    }
+
+    /**
+     * Upload a file and return the path.
+     */
+    private function uploadFile($file, string $path): string
+    {
+        $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+        $filePath = $file->storeAs($path, $fileName, 'public');
+        return Storage::url($filePath);
+    }
+
+    /**
+     * Delete a file from storage.
+     */
+    private function deleteFile(?string $fileUrl): void
+    {
+        if (!$fileUrl) return;
+
+        try {
+            $path = str_replace('/storage/', '', $fileUrl);
+            if (Storage::disk('public')->exists($path)) {
+                Storage::disk('public')->delete($path);
+            }
+        } catch (\Exception $e) {
+            Log::warning('Failed to delete file: ' . $fileUrl . ' - ' . $e->getMessage());
+        }
+    }
+}
