@@ -26,15 +26,14 @@ class StoreCampaignRequest extends FormRequest
             'description' => ['required', 'string', 'max:5000'],
             'budget' => ['required', 'numeric', 'min:1', 'max:999999.99'],
             'requirements' => ['nullable', 'string', 'max:5000'],
-            'target_states' => ['nullable', 'array'],
-            'target_states.*' => ['string', 'max:255'],
+            'target_states' => ['nullable'],
             'category' => ['nullable', 'string', 'max:255'],
             'campaign_type' => ['nullable', 'string', 'max:255'],
             'image_url' => ['nullable', 'url', 'max:2048'],
             'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:5120'], // 5MB max
             'logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:5120'], // 5MB max
             'attach_file' => ['nullable', 'file', 'mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,zip,rar,jpg,jpeg,png,gif,webp', 'max:10240'], // 10MB max, now allows images too
-            'deadline' => ['required', 'date', 'after:today'],
+            'deadline' => ['required', 'date'],
             'max_bids' => ['nullable', 'integer', 'min:1', 'max:100'],
         ];
     }
@@ -57,7 +56,6 @@ class StoreCampaignRequest extends FormRequest
             'budget.max' => 'Campaign budget cannot exceed $999,999.99.',
             'deadline.required' => 'Campaign deadline is required.',
             'deadline.date' => 'Campaign deadline must be a valid date.',
-            'deadline.after' => 'Campaign deadline must be after today.',
             'image_url.url' => 'Image URL must be a valid URL.',
             'image_url.max' => 'Image URL must not exceed 2048 characters.',
             'image.image' => 'The uploaded file must be an image.',
@@ -83,7 +81,6 @@ class StoreCampaignRequest extends FormRequest
     public function attributes(): array
     {
         return [
-            'target_states.*' => 'target state',
         ];
     }
 

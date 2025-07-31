@@ -416,11 +416,23 @@ class CampaignController extends Controller
                 return response()->json(['error' => 'Only brands can create campaigns'], 403);
             }
 
+            // Debug: Log the request data
+            Log::info('Campaign creation request data:', $request->all());
+            Log::info('Deadline received:', [
+                'deadline_raw' => $request->input('deadline'),
+                'deadline_type' => gettype($request->input('deadline')),
+                'all_data' => $request->all()
+            ]);
+            
             $data = $request->validated();
             $data['brand_id'] = $user->id;
             $data['status'] = 'pending';
             $data['is_active'] = true;
-            $data['location'] = $request->locations;
+            
+            // Ensure target_states is always an array
+            if (!isset($data['target_states']) || !is_array($data['target_states'])) {
+                $data['target_states'] = [];
+            }
 
             // Handle file uploads
             if ($request->hasFile('image')) {
