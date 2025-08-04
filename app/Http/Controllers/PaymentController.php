@@ -4,6 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Transaction;
 use App\Models\User;
+use App\Models\Withdrawal;
+use App\Models\CreatorBalance;
+use App\Models\BankAccount;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -847,5 +850,545 @@ class PaymentController extends Controller
         $digit2 = ($remainder < 2) ? 0 : (11 - $remainder);
         
         return $cpf[10] == $digit2;
+    }
+
+    /**
+     * Register bank account for freelancer/creator
+     */
+    public function registerBankAccount(Request $request): JsonResponse
+    {
+        $user = auth()->user();
+
+        // Check if user is a creator
+        if (!$user->isCreator()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only creators can register bank accounts',
+            ], 403);
+        }
+
+        $request->validate([
+            'bank_code' => 'required|string|max:4',
+            'agencia' => 'required|string|max:5',
+            'agencia_dv' => 'required|string|max:2',
+            'conta' => 'required|string|max:12',
+            'conta_dv' => 'required|string|max:2',
+            'cpf' => 'required|string|regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/',
+            'name' => 'required|string|max:255',
+        ]);
+
+        // Validate CPF
+        if (!$this->validateCPF($request->cpf)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'CPF inválido. Por favor, verifique o número.',
+                'errors' => ['cpf' => ['CPF inválido. Use um CPF válido como: 111.444.777-35']]
+            ], 422);
+        }
+
+        try {
+            // Check if user already has a bank account
+            $existingBankAccount = BankAccount::where('user_id', $user->id)->first();
+            
+            if ($existingBankAccount) {
+                // Update existing bank account
+                $existingBankAccount->update([
+                    'bank_code' => $request->bank_code,
+                    'agencia' => $request->agencia,
+                    'agencia_dv' => $request->agencia_dv,
+                    'conta' => $request->conta,
+                    'conta_dv' => $request->conta_dv,
+                    'cpf' => $request->cpf,
+                    'name' => $request->name,
+                ]);
+                
+                $bankAccount = $existingBankAccount;
+            } else {
+                // Create new bank account
+                $bankAccount = BankAccount::create([
+                    'user_id' => $user->id,
+                    'bank_code' => $request->bank_code,
+                    'agencia' => $request->agencia,
+                    'agencia_dv' => $request->agencia_dv,
+                    'conta' => $request->conta,
+                    'conta_dv' => $request->conta_dv,
+                    'cpf' => $request->cpf,
+                    'name' => $request->name,
+                ]);
+            }
+
+            Log::info('Bank account registered successfully', [
+                'user_id' => $user->id,
+                'bank_account_id' => $bankAccount->id,
+                'bank_code' => $request->bank_code,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Informações bancárias registradas com sucesso',
+                'data' => [
+                    'bank_account_id' => $bankAccount->id,
+                    'status' => 'registered',
+                    'bank_info' => [
+                        'bank_code' => $bankAccount->bank_code,
+                        'agencia' => $bankAccount->agencia,
+                        'agencia_dv' => $bankAccount->agencia_dv,
+                        'conta' => $bankAccount->conta,
+                        'conta_dv' => $bankAccount->conta_dv,
+                        'cpf' => $bankAccount->cpf,
+                        'name' => $bankAccount->name,
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Bank account registration failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao registrar informações bancárias. Tente novamente.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get freelancer's bank information
+     */
+    public function getBankInfo(): JsonResponse
+    {
+        $user = auth()->user();
+
+        // Check if user is a creator
+        if (!$user->isCreator()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only creators can access bank information',
+            ], 403);
+        }
+
+        try {
+            $bankAccount = BankAccount::where('user_id', $user->id)->first();
+
+            if (!$bankAccount) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'has_bank_info' => false,
+                        'bank_info' => null
+                    ]
+                ]);
+            }
+
+            $bankInfo = [
+                'bank_code' => $bankAccount->bank_code,
+                'agencia' => $bankAccount->agencia,
+                'agencia_dv' => $bankAccount->agencia_dv,
+                'conta' => $bankAccount->conta,
+                'conta_dv' => $bankAccount->conta_dv,
+                'cpf' => $bankAccount->cpf,
+                'name' => $bankAccount->name,
+                'has_bank_info' => true,
+                'bank_account_id' => $bankAccount->id,
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $bankInfo
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching bank info', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch bank information',
+            ], 500);
+        }
+    }
+
+    /**
+     * Update freelancer's bank information
+     */
+    public function updateBankInfo(Request $request): JsonResponse
+    {
+        $user = auth()->user();
+
+        // Check if user is a creator
+        if (!$user->isCreator()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only creators can update bank information',
+            ], 403);
+        }
+
+        $request->validate([
+            'bank_code' => 'required|string|max:4',
+            'agencia' => 'required|string|max:5',
+            'agencia_dv' => 'required|string|max:2',
+            'conta' => 'required|string|max:12',
+            'conta_dv' => 'required|string|max:2',
+            'cpf' => 'required|string|regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/',
+            'name' => 'required|string|max:255',
+        ]);
+
+        // Validate CPF
+        if (!$this->validateCPF($request->cpf)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'CPF inválido. Por favor, verifique o número.',
+                'errors' => ['cpf' => ['CPF inválido. Use um CPF válido como: 111.444.777-35']]
+            ], 422);
+        }
+
+        try {
+            $bankAccount = BankAccount::where('user_id', $user->id)->first();
+
+            if (!$bankAccount) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Nenhuma conta bancária encontrada. Registre uma conta primeiro.',
+                ], 404);
+            }
+
+            $bankAccount->update([
+                'bank_code' => $request->bank_code,
+                'agencia' => $request->agencia,
+                'agencia_dv' => $request->agencia_dv,
+                'conta' => $request->conta,
+                'conta_dv' => $request->conta_dv,
+                'cpf' => $request->cpf,
+                'name' => $request->name,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Informações bancárias atualizadas com sucesso',
+                'data' => [
+                    'bank_account_id' => $bankAccount->id,
+                    'bank_info' => [
+                        'bank_code' => $bankAccount->bank_code,
+                        'agencia' => $bankAccount->agencia,
+                        'agencia_dv' => $bankAccount->agencia_dv,
+                        'conta' => $bankAccount->conta,
+                        'conta_dv' => $bankAccount->conta_dv,
+                        'cpf' => $bankAccount->cpf,
+                        'name' => $bankAccount->name,
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Bank info update failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao atualizar informações bancárias. Tente novamente.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete freelancer's bank information
+     */
+    public function deleteBankInfo(): JsonResponse
+    {
+        $user = auth()->user();
+
+        // Check if user is a creator
+        if (!$user->isCreator()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only creators can delete bank information',
+            ], 403);
+        }
+
+        try {
+            $bankAccount = BankAccount::where('user_id', $user->id)->first();
+
+            if (!$bankAccount) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Nenhuma conta bancária encontrada.',
+                ], 404);
+            }
+
+            $bankAccount->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Informações bancárias removidas com sucesso',
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Bank info deletion failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao remover informações bancárias. Tente novamente.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get freelancer's withdrawal history
+     */
+    public function getWithdrawalHistory(Request $request): JsonResponse
+    {
+        $user = auth()->user();
+
+        // Check if user is a creator
+        if (!$user->isCreator()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only creators can access withdrawal history',
+            ], 403);
+        }
+
+        try {
+            $withdrawals = Withdrawal::where('creator_id', $user->id)
+                ->orderBy('created_at', 'desc')
+                ->paginate($request->get('per_page', 10));
+
+            return response()->json([
+                'success' => true,
+                'data' => $withdrawals
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching withdrawal history', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch withdrawal history',
+            ], 500);
+        }
+    }
+
+    /**
+     * Request withdrawal for freelancer
+     */
+    public function requestWithdrawal(Request $request): JsonResponse
+    {
+        $user = auth()->user();
+
+        // Check if user is a creator
+        if (!$user->isCreator()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only creators can request withdrawals',
+            ], 403);
+        }
+
+        // Get the withdrawal method from database
+        $withdrawalMethod = \App\Models\WithdrawalMethod::findByCode($request->method);
+        
+        if (!$withdrawalMethod) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid withdrawal method',
+            ], 400);
+        }
+
+        $request->validate([
+            'amount' => 'required|numeric|min:' . $withdrawalMethod->min_amount . '|max:' . $withdrawalMethod->max_amount,
+            'method' => 'required|string',
+        ]);
+
+        try {
+            // Check if user has sufficient balance
+            $balance = CreatorBalance::where('creator_id', $user->id)->first();
+            
+            if (!$balance || $balance->available_balance < $request->amount) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Saldo insuficiente para realizar o saque',
+                ], 400);
+            }
+
+            // Check if amount is within method limits
+            if (!$withdrawalMethod->isAmountValid($request->amount)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Valor deve estar entre {$withdrawalMethod->formatted_min_amount} e {$withdrawalMethod->formatted_max_amount} para {$withdrawalMethod->name}",
+                ], 400);
+            }
+
+            // Check if user has bank info for bank transfer
+            if ($request->method === 'bank_transfer') {
+                $bankAccount = BankAccount::where('user_id', $user->id)->first();
+                if (!$bankAccount) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Informações bancárias necessárias para transferência bancária',
+                    ], 400);
+                }
+                $bankAccountId = $bankAccount->id;
+            } else {
+                $bankAccountId = null;
+            }
+
+            // Create withdrawal request
+            $withdrawal = Withdrawal::create([
+                'creator_id' => $user->id,
+                'amount' => $request->amount,
+                'withdrawal_method' => $request->method,
+                'status' => 'pending',
+                'bank_account_id' => $bankAccountId,
+            ]);
+
+            // Update balance
+            $balance->update([
+                'available_balance' => $balance->available_balance - $request->amount,
+                'total_withdrawn' => $balance->total_withdrawn + $request->amount,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Solicitação de saque criada com sucesso',
+                'data' => $withdrawal
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Withdrawal request failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao solicitar saque. Tente novamente.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get freelancer's earnings and balance
+     */
+    public function getEarnings(): JsonResponse
+    {
+        $user = auth()->user();
+
+        // Check if user is a creator
+        if (!$user->isCreator()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only creators can access earnings information',
+            ], 403);
+        }
+
+        try {
+            $balance = CreatorBalance::where('creator_id', $user->id)->first();
+
+            if (!$balance) {
+                $balance = CreatorBalance::create([
+                    'creator_id' => $user->id,
+                    'available_balance' => 0,
+                    'pending_balance' => 0,
+                    'total_earned' => 0,
+                    'total_withdrawn' => 0,
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'balance' => [
+                        'available_balance' => $balance->available_balance,
+                        'pending_balance' => $balance->pending_balance,
+                        'total_balance' => $balance->total_balance,
+                        'total_earned' => $balance->total_earned,
+                        'total_withdrawn' => $balance->total_withdrawn,
+                        'formatted_available_balance' => $balance->formatted_available_balance,
+                        'formatted_pending_balance' => $balance->formatted_pending_balance,
+                        'formatted_total_balance' => $balance->formatted_total_balance,
+                        'formatted_total_earned' => $balance->formatted_total_earned,
+                        'formatted_total_withdrawn' => $balance->formatted_total_withdrawn,
+                    ],
+                    'earnings' => [
+                        'this_month' => $balance->earnings_this_month,
+                        'this_year' => $balance->earnings_this_year,
+                        'formatted_this_month' => $balance->formatted_earnings_this_month,
+                        'formatted_this_year' => $balance->formatted_earnings_this_year,
+                    ],
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching earnings', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch earnings information',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get available withdrawal methods
+     */
+    public function getWithdrawalMethods(): JsonResponse
+    {
+        $user = auth()->user();
+
+        // Check if user is a creator
+        if (!$user->isCreator()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only creators can access withdrawal methods',
+            ], 403);
+        }
+
+        try {
+            $methods = \App\Models\WithdrawalMethod::getActiveMethods()
+                ->map(function ($method) {
+                    return [
+                        'id' => $method->code,
+                        'name' => $method->name,
+                        'description' => $method->description,
+                        'min_amount' => (float) $method->min_amount,
+                        'max_amount' => (float) $method->max_amount,
+                        'processing_time' => $method->processing_time,
+                        'fee' => (float) $method->fee,
+                        'requires_bank_info' => $method->code === 'bank_transfer',
+                        'required_fields' => $method->getRequiredFields(),
+                        'field_config' => $method->getFieldConfig(),
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'data' => $methods,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching withdrawal methods', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch withdrawal methods',
+            ], 500);
+        }
     }
 }

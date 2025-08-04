@@ -45,6 +45,15 @@ class OfferController extends Controller
             ], 403);
         }
 
+        // Check if brand has active payment methods
+        if (!$user->hasActivePaymentMethods()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You must register a payment method before sending offers. Please add a credit card in your payment settings.',
+                'error_code' => 'NO_PAYMENT_METHOD',
+            ], 400);
+        }
+
         // Check if creator exists and is a creator
         $creator = User::find($request->creator_id);
         if (!$creator || !$creator->isCreator()) {
@@ -120,6 +129,26 @@ class OfferController extends Controller
                 ],
             ]);
 
+            // Emit Socket.IO event for real-time updates
+            $this->emitSocketEvent('offer_created', [
+                'roomId' => $chatRoom->room_id,
+                'offerData' => [
+                    'id' => $offer->id,
+                    'title' => $offer->title,
+                    'description' => $offer->description,
+                    'budget' => $offer->budget,
+                    'formatted_budget' => $offer->formatted_budget,
+                    'estimated_days' => $offer->estimated_days,
+                    'status' => 'pending',
+                    'expires_at' => $offer->expires_at->format('Y-m-d H:i:s'),
+                    'days_until_expiry' => $offer->days_until_expiry,
+                    'brand_id' => $user->id,
+                    'creator_id' => $creator->id,
+                    'chat_room_id' => $chatRoom->room_id,
+                ],
+                'senderId' => $user->id,
+            ]);
+
             Log::info('Offer created successfully', [
                 'offer_id' => $offer->id,
                 'brand_id' => $user->id,
@@ -173,6 +202,24 @@ class OfferController extends Controller
             Log::error('Failed to create offer chat message', [
                 'chat_room_id' => $chatRoom->id,
                 'message_type' => $messageType,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Emit Socket.IO event for real-time updates
+     */
+    private function emitSocketEvent(string $event, array $data): void
+    {
+        try {
+            if (isset($GLOBALS['socket_server'])) {
+                $io = $GLOBALS['socket_server'];
+                $io->emit($event, $data);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to emit socket event', [
+                'event' => $event,
                 'error' => $e->getMessage(),
             ]);
         }
@@ -325,14 +372,45 @@ class OfferController extends Controller
 
         try {
             $offer = Offer::where('creator_id', $user->id)
-                ->where('status', 'pending')
                 ->find($id);
 
             if (!$offer) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Offer not found or cannot be accepted',
+                    'message' => 'Offer not found',
                 ], 404);
+            }
+
+            // Check if offer is already accepted
+            if ($offer->status === 'accepted') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This offer has already been accepted',
+                ], 400);
+            }
+
+            // Check if offer is rejected
+            if ($offer->status === 'rejected') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This offer has already been rejected',
+                ], 400);
+            }
+
+            // Check if offer is cancelled
+            if ($offer->status === 'cancelled') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This offer has been cancelled',
+                ], 400);
+            }
+
+            // Check if offer is expired
+            if ($offer->isExpired()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This offer has expired',
+                ], 400);
             }
 
             if (!$offer->canBeAccepted()) {
@@ -371,6 +449,34 @@ class OfferController extends Controller
                                 'avatar_url' => $user->avatar_url,
                             ],
                         ],
+                    ]);
+
+                    // Emit Socket.IO event for real-time updates
+                    $this->emitSocketEvent('offer_accepted', [
+                        'roomId' => $chatRoom->room_id,
+                        'offerData' => [
+                            'id' => $offer->id,
+                            'title' => $offer->title,
+                            'description' => $offer->description,
+                            'budget' => $offer->budget,
+                            'formatted_budget' => $offer->formatted_budget,
+                            'estimated_days' => $offer->estimated_days,
+                            'status' => $offer->status,
+                            'brand_id' => $offer->brand_id,
+                            'creator_id' => $offer->creator_id,
+                            'chat_room_id' => $chatRoom->room_id,
+                        ],
+                        'contractData' => $contract ? [
+                            'id' => $contract->id,
+                            'title' => $contract->title,
+                            'description' => $contract->description,
+                            'status' => $contract->status,
+                            'workflow_status' => $contract->workflow_status,
+                            'brand_id' => $contract->brand_id,
+                            'creator_id' => $contract->creator_id,
+                            'can_be_completed' => $contract->canBeCompleted(),
+                        ] : null,
+                        'senderId' => $user->id,
                     ]);
                 }
 
@@ -481,6 +587,25 @@ class OfferController extends Controller
                             ],
                         ],
                     ]);
+
+                    // Emit Socket.IO event for real-time updates
+                    $this->emitSocketEvent('offer_rejected', [
+                        'roomId' => $chatRoom->room_id,
+                        'offerData' => [
+                            'id' => $offer->id,
+                            'title' => $offer->title,
+                            'description' => $offer->description,
+                            'budget' => $offer->budget,
+                            'formatted_budget' => $offer->formatted_budget,
+                            'estimated_days' => $offer->estimated_days,
+                            'status' => $offer->status,
+                            'brand_id' => $offer->brand_id,
+                            'creator_id' => $offer->creator_id,
+                            'chat_room_id' => $chatRoom->room_id,
+                        ],
+                        'senderId' => $user->id,
+                        'rejectionReason' => $request->reason,
+                    ]);
                 }
 
                 Log::info('Offer rejected successfully', [
@@ -572,6 +697,24 @@ class OfferController extends Controller
                             'avatar_url' => $user->avatar_url,
                         ],
                     ],
+                ]);
+
+                // Emit Socket.IO event for real-time updates
+                $this->emitSocketEvent('offer_cancelled', [
+                    'roomId' => $chatRoom->room_id,
+                    'offerData' => [
+                        'id' => $offer->id,
+                        'title' => $offer->title,
+                        'description' => $offer->description,
+                        'budget' => $offer->budget,
+                        'formatted_budget' => $offer->formatted_budget,
+                        'estimated_days' => $offer->estimated_days,
+                        'status' => $offer->status,
+                        'brand_id' => $offer->brand_id,
+                        'creator_id' => $offer->creator_id,
+                        'chat_room_id' => $chatRoom->room_id,
+                    ],
+                    'senderId' => $user->id,
                 ]);
             }
 

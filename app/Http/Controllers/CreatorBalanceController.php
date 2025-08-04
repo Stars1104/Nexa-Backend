@@ -240,7 +240,7 @@ class CreatorBalanceController extends Controller
     }
 
     /**
-     * Get withdrawal methods available for the creator
+     * Get available withdrawal methods
      */
     public function withdrawalMethods(): JsonResponse
     {
@@ -255,35 +255,20 @@ class CreatorBalanceController extends Controller
         }
 
         try {
-            $methods = [
-                [
-                    'id' => 'bank_transfer',
-                    'name' => 'Transferência Bancária',
-                    'description' => 'Transferência para conta bancária',
-                    'min_amount' => 50.00,
-                    'max_amount' => 10000.00,
-                    'processing_time' => '2-3 dias úteis',
-                    'fee' => 0.00,
-                ],
-                [
-                    'id' => 'pagarme_account',
-                    'name' => 'Conta Pagar.me',
-                    'description' => 'Transferência para conta Pagar.me',
-                    'min_amount' => 10.00,
-                    'max_amount' => 5000.00,
-                    'processing_time' => '1-2 dias úteis',
-                    'fee' => 0.00,
-                ],
-                [
-                    'id' => 'pix',
-                    'name' => 'PIX',
-                    'description' => 'Transferência PIX',
-                    'min_amount' => 5.00,
-                    'max_amount' => 2000.00,
-                    'processing_time' => 'Até 24 horas',
-                    'fee' => 0.00,
-                ],
-            ];
+            $methods = \App\Models\WithdrawalMethod::getActiveMethods()
+                ->map(function ($method) {
+                    return [
+                        'id' => $method->code,
+                        'name' => $method->name,
+                        'description' => $method->description,
+                        'min_amount' => (float) $method->min_amount,
+                        'max_amount' => (float) $method->max_amount,
+                        'processing_time' => $method->processing_time,
+                        'fee' => (float) $method->fee,
+                        'required_fields' => $method->getRequiredFields(),
+                        'field_config' => $method->getFieldConfig(),
+                    ];
+                });
 
             return response()->json([
                 'success' => true,

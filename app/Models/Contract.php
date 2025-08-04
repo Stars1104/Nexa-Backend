@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Carbon\Carbon;
 use App\Services\NotificationService;
 
@@ -81,7 +82,7 @@ class Contract extends Model
 
     public function messages(): HasMany
     {
-        return $this->hasMany(Message::class, 'chat_room_id', 'chat_room_id');
+        return $this->hasManyThrough(Message::class, Offer::class, 'id', 'chat_room_id', 'offer_id', 'chat_room_id');
     }
 
     // Scopes
@@ -292,6 +293,61 @@ class Contract extends Model
         NotificationService::notifyCreatorOfPaymentAvailable($this);
 
         return true;
+    }
+
+    /**
+     * Check if contract payment has been processed
+     */
+    public function hasPaymentProcessed(): bool
+    {
+        return $this->payment && $this->payment->status === 'completed';
+    }
+
+    /**
+     * Check if contract payment is pending
+     */
+    public function isPaymentPending(): bool
+    {
+        return $this->status === 'pending' && $this->workflow_status === 'payment_pending';
+    }
+
+    /**
+     * Check if contract payment failed
+     */
+    public function isPaymentFailed(): bool
+    {
+        return $this->status === 'payment_failed' && $this->workflow_status === 'payment_failed';
+    }
+
+    /**
+     * Check if contract can be started (payment processed)
+     */
+    public function canBeStarted(): bool
+    {
+        return $this->status === 'pending' && $this->hasPaymentProcessed();
+    }
+
+    /**
+     * Retry payment for failed contracts
+     */
+    public function retryPayment(): bool
+    {
+        if (!$this->isPaymentFailed()) {
+            return false;
+        }
+
+        $paymentService = new \App\Services\AutomaticPaymentService();
+        $paymentResult = $paymentService->processContractPayment($this);
+
+        if ($paymentResult['success']) {
+            $this->update([
+                'status' => 'active',
+                'workflow_status' => 'active',
+            ]);
+            return true;
+        }
+
+        return false;
     }
 
     /**

@@ -8,6 +8,9 @@ const io = new Server(httpServer, {
     cors: {
         origin: [
             "http://localhost:5000",
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "http://localhost:4173"
         ],
         methods: ["GET", "POST"],
         credentials: true
@@ -151,6 +154,201 @@ io.on('connection', (socket) => {
             fileName,
             progress
         });
+    });
+
+    // NEW: Handle offer creation
+    socket.on('offer_created', (data) => {
+        const { roomId, offerData, senderId } = data;
+        
+        // Broadcast offer creation to all users in the room
+        io.to(roomId).emit('offer_created', {
+            roomId,
+            offerData,
+            senderId,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Also send to specific user notification room
+        if (offerData.creator_id) {
+            const creatorNotificationRoom = `user_${offerData.creator_id}`;
+            io.to(creatorNotificationRoom).emit('new_offer_notification', {
+                offerData,
+                senderId,
+                timestamp: new Date().toISOString()
+            });
+        }
+    });
+
+    // NEW: Handle offer acceptance
+    socket.on('offer_accepted', (data) => {
+        const { roomId, offerData, contractData, senderId } = data;
+        
+        // Broadcast offer acceptance to all users in the room
+        io.to(roomId).emit('offer_accepted', {
+            roomId,
+            offerData,
+            contractData,
+            senderId,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Also send to brand notification room
+        if (offerData.brand_id) {
+            const brandNotificationRoom = `user_${offerData.brand_id}`;
+            io.to(brandNotificationRoom).emit('offer_accepted_notification', {
+                offerData,
+                contractData,
+                senderId,
+                timestamp: new Date().toISOString()
+            });
+        }
+    });
+
+    // NEW: Handle offer rejection
+    socket.on('offer_rejected', (data) => {
+        const { roomId, offerData, senderId, rejectionReason } = data;
+        
+        // Broadcast offer rejection to all users in the room
+        io.to(roomId).emit('offer_rejected', {
+            roomId,
+            offerData,
+            senderId,
+            rejectionReason,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Also send to brand notification room
+        if (offerData.brand_id) {
+            const brandNotificationRoom = `user_${offerData.brand_id}`;
+            io.to(brandNotificationRoom).emit('offer_rejected_notification', {
+                offerData,
+                senderId,
+                rejectionReason,
+                timestamp: new Date().toISOString()
+            });
+        }
+    });
+
+    // NEW: Handle offer cancellation
+    socket.on('offer_cancelled', (data) => {
+        const { roomId, offerData, senderId } = data;
+        
+        // Broadcast offer cancellation to all users in the room
+        io.to(roomId).emit('offer_cancelled', {
+            roomId,
+            offerData,
+            senderId,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Also send to creator notification room
+        if (offerData.creator_id) {
+            const creatorNotificationRoom = `user_${offerData.creator_id}`;
+            io.to(creatorNotificationRoom).emit('offer_cancelled_notification', {
+                offerData,
+                senderId,
+                timestamp: new Date().toISOString()
+            });
+        }
+    });
+
+    // NEW: Handle contract completion
+    socket.on('contract_completed', (data) => {
+        const { roomId, contractData, senderId } = data;
+        
+        // Broadcast contract completion to all users in the room
+        io.to(roomId).emit('contract_completed', {
+            roomId,
+            contractData,
+            senderId,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Also send to both users' notification rooms
+        if (contractData.creator_id) {
+            const creatorNotificationRoom = `user_${contractData.creator_id}`;
+            io.to(creatorNotificationRoom).emit('contract_completed_notification', {
+                contractData,
+                senderId,
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        if (contractData.brand_id) {
+            const brandNotificationRoom = `user_${contractData.brand_id}`;
+            io.to(brandNotificationRoom).emit('contract_completed_notification', {
+                contractData,
+                senderId,
+                timestamp: new Date().toISOString()
+            });
+        }
+    });
+
+    // NEW: Handle contract termination
+    socket.on('contract_terminated', (data) => {
+        const { roomId, contractData, senderId, terminationReason } = data;
+        
+        // Broadcast contract termination to all users in the room
+        io.to(roomId).emit('contract_terminated', {
+            roomId,
+            contractData,
+            senderId,
+            terminationReason,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Also send to both users' notification rooms
+        if (contractData.creator_id) {
+            const creatorNotificationRoom = `user_${contractData.creator_id}`;
+            io.to(creatorNotificationRoom).emit('contract_terminated_notification', {
+                contractData,
+                senderId,
+                terminationReason,
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        if (contractData.brand_id) {
+            const brandNotificationRoom = `user_${contractData.brand_id}`;
+            io.to(brandNotificationRoom).emit('contract_terminated_notification', {
+                contractData,
+                senderId,
+                terminationReason,
+                timestamp: new Date().toISOString()
+            });
+        }
+    });
+
+    // NEW: Handle contract activation
+    socket.on('contract_activated', (data) => {
+        const { roomId, contractData, senderId } = data;
+        
+        // Broadcast contract activation to all users in the room
+        io.to(roomId).emit('contract_activated', {
+            roomId,
+            contractData,
+            senderId,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Also send to both users' notification rooms
+        if (contractData.creator_id) {
+            const creatorNotificationRoom = `user_${contractData.creator_id}`;
+            io.to(creatorNotificationRoom).emit('contract_activated_notification', {
+                contractData,
+                senderId,
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        if (contractData.brand_id) {
+            const brandNotificationRoom = `user_${contractData.brand_id}`;
+            io.to(brandNotificationRoom).emit('contract_activated_notification', {
+                contractData,
+                senderId,
+                timestamp: new Date().toISOString()
+            });
+        }
     });
 
     // Handle disconnection

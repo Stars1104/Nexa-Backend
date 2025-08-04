@@ -16,6 +16,15 @@ class Kernel extends ConsoleKernel
         
         // Expire offers every hour
         $schedule->command('offers:expire')->hourly();
+        
+        // Process payments every 30 minutes
+        $schedule->command('payments:process')->everyThirtyMinutes();
+        
+        // Process withdrawals every hour
+        $schedule->command('withdrawals:process')->hourly();
+        
+        // Check for expired messages every 15 minutes
+        $schedule->command('messages:check')->everyFifteenMinutes();
     }
 
     /**

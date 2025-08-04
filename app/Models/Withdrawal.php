@@ -124,7 +124,7 @@ class Withdrawal extends Model
             $this->updateCreatorBalance();
 
             // Notify creator about successful withdrawal
-            NotificationService::notifyUserOfWithdrawalCompleted($this);
+            self::createWithdrawalNotification('completed');
 
             return true;
         } catch (\Exception $e) {
@@ -137,28 +137,103 @@ class Withdrawal extends Model
             $this->refundToCreator();
 
             // Notify about withdrawal failure
-            NotificationService::notifyUserOfWithdrawalFailed($this, $e->getMessage());
+            self::createWithdrawalNotification('failed', $e->getMessage());
 
             return false;
         }
     }
 
+    private function createWithdrawalNotification(string $status, string $reason = null): void
+    {
+        try {
+            $notification = Notification::create([
+                'user_id' => $this->creator_id,
+                'type' => 'withdrawal_' . $status,
+                'title' => $status === 'completed' ? 'Saque Processado' : 'Falha no Saque',
+                'message' => $status === 'completed' 
+                    ? "Seu saque de {$this->formatted_amount} foi processado com sucesso."
+                    : "Falha no processamento do saque de {$this->formatted_amount}. Motivo: {$reason}",
+                'data' => [
+                    'withdrawal_id' => $this->id,
+                    'amount' => $this->amount,
+                    'method' => $this->withdrawal_method,
+                    'status' => $status,
+                    'reason' => $reason,
+                ],
+                'read_at' => null,
+            ]);
+
+            // Send real-time notification
+            NotificationService::sendSocketNotification($this->creator_id, $notification);
+        } catch (\Exception $e) {
+            Log::error('Failed to create withdrawal notification', [
+                'withdrawal_id' => $this->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
     private function processWithdrawal(): void
     {
-        // In a real implementation, this would integrate with Pagar.me or another payment gateway
-        // For now, we'll simulate the withdrawal processing
+        // Handle different withdrawal methods
+        switch ($this->withdrawal_method) {
+            case 'pagarme_bank_transfer':
+                $this->processPagarMeWithdrawal();
+                break;
+            case 'bank_transfer':
+                $this->processBankTransfer();
+                break;
+            case 'pix':
+                $this->processPixWithdrawal();
+                break;
+            default:
+                throw new \Exception('Método de saque não suportado: ' . $this->withdrawal_method);
+        }
+    }
+
+    private function processPagarMeWithdrawal(): void
+    {
+        // Simulate Pagar.me bank transfer processing
+        sleep(2); // Simulate API call delay
         
-        // Simulate processing delay
-        sleep(1);
-        
-        // Generate transaction ID
+        // Generate transaction ID for Pagar.me
         $this->update([
-            'transaction_id' => 'WD_' . time() . '_' . $this->id,
+            'transaction_id' => 'PAGARME_' . time() . '_' . $this->id,
+        ]);
+
+        // Simulate potential failure (for testing)
+        if (rand(1, 100) <= 2) { // 2% chance of failure for Pagar.me
+            throw new \Exception('Falha no processamento do Pagar.me. Tente novamente.');
+        }
+    }
+
+    private function processBankTransfer(): void
+    {
+        // Simulate traditional bank transfer processing
+        sleep(3); // Simulate longer processing time
+        
+        $this->update([
+            'transaction_id' => 'BANK_' . time() . '_' . $this->id,
         ]);
 
         // Simulate potential failure (for testing)
         if (rand(1, 100) <= 5) { // 5% chance of failure
-            throw new \Exception('Simulated withdrawal failure for testing');
+            throw new \Exception('Falha na transferência bancária. Tente novamente.');
+        }
+    }
+
+    private function processPixWithdrawal(): void
+    {
+        // Simulate PIX processing
+        sleep(1); // Simulate fast PIX processing
+        
+        $this->update([
+            'transaction_id' => 'PIX_' . time() . '_' . $this->id,
+        ]);
+
+        // Simulate potential failure (for testing)
+        if (rand(1, 100) <= 1) { // 1% chance of failure for PIX
+            throw new \Exception('Falha no processamento PIX. Tente novamente.');
         }
     }
 
@@ -193,7 +268,7 @@ class Withdrawal extends Model
         $this->refundToCreator();
 
         // Notify creator about cancellation
-        NotificationService::notifyUserOfWithdrawalCancelled($this, $reason);
+        self::createWithdrawalNotification('cancelled', $reason);
 
         return true;
     }
@@ -244,6 +319,8 @@ class Withdrawal extends Model
         switch ($this->withdrawal_method) {
             case 'bank_transfer':
                 return 'Transferência Bancária';
+            case 'pagarme_bank_transfer':
+                return 'Transferência Bancária via Pagar.me';
             case 'pagarme_account':
                 return 'Conta Pagar.me';
             case 'pix':

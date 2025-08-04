@@ -20,7 +20,7 @@ class ChatController extends Controller
     public function getChatRooms(): JsonResponse
     {
         $user = Auth::user();
-        $chatRooms = [];
+        $chatRooms = collect();
 
         if ($user->isBrand()) {
             $chatRooms = ChatRoom::where('brand_id', $user->id)
@@ -32,11 +32,28 @@ class ChatController extends Controller
                 ->with(['brand', 'campaign', 'lastMessage.sender'])
                 ->orderBy('last_message_at', 'desc')
                 ->get();
+        } elseif ($user->isAdmin()) {
+            // Admin can see all chat rooms
+            $chatRooms = ChatRoom::with(['creator', 'brand', 'campaign', 'lastMessage.sender'])
+                ->orderBy('last_message_at', 'desc')
+                ->get();
         }
 
         $formattedRooms = $chatRooms->map(function ($room) use ($user) {
             $otherUser = $user->isBrand() ? $room->creator : $room->brand;
             $lastMessage = $room->lastMessage->first();
+            
+            // For admin users, determine which user they're chatting with based on the last message
+            if ($user->isAdmin()) {
+                if ($lastMessage && $lastMessage->sender_id === $room->brand_id) {
+                    $otherUser = $room->brand;
+                } elseif ($lastMessage && $lastMessage->sender_id === $room->creator_id) {
+                    $otherUser = $room->creator;
+                } else {
+                    // If no messages, default to showing the creator
+                    $otherUser = $room->creator;
+                }
+            }
             
             return [
                 'id' => $room->id,
@@ -83,12 +100,18 @@ class ChatController extends Controller
         ]);
 
         // Find the chat room
-        $room = ChatRoom::where('room_id', $roomId)
-            ->where(function ($query) use ($user) {
-                $query->where('brand_id', $user->id)
-                      ->orWhere('creator_id', $user->id);
-            })
-            ->first();
+        if ($user->isAdmin()) {
+            // Admin can access any chat room
+            $room = ChatRoom::where('room_id', $roomId)->first();
+        } else {
+            // Regular users can only access their own chat rooms
+            $room = ChatRoom::where('room_id', $roomId)
+                ->where(function ($query) use ($user) {
+                    $query->where('brand_id', $user->id)
+                          ->orWhere('creator_id', $user->id);
+                })
+                ->first();
+        }
 
         if (!$room) {
             \Log::error('Chat room not found for messages', [
@@ -168,16 +191,49 @@ class ChatController extends Controller
                 $offerData = is_string($message->offer_data) ? json_decode($message->offer_data, true) : $message->offer_data;
                 
                 if ($offerData && is_array($offerData)) {
-                    $messageData['offer_data'] = $offerData;
-                    
-                    // If offer is accepted and has contract_id, get contract information
-                    if (isset($offerData['status']) && $offerData['status'] === 'accepted' && isset($offerData['contract_id'])) {
-                        $contract = \App\Models\Contract::find($offerData['contract_id']);
-                        if ($contract) {
-                            $messageData['offer_data']['contract_status'] = $contract->status;
-                            $messageData['offer_data']['can_be_completed'] = $contract->canBeCompleted();
+                    // Get the current offer status from the database
+                    if (isset($offerData['offer_id'])) {
+                        $currentOffer = \App\Models\Offer::find($offerData['offer_id']);
+                        if ($currentOffer) {
+                            // Update the offer data with current status
+                            $offerData['status'] = $currentOffer->status;
+                            $offerData['accepted_at'] = $currentOffer->accepted_at?->format('Y-m-d H:i:s');
+                            $offerData['rejected_at'] = $currentOffer->rejected_at?->format('Y-m-d H:i:s');
+                            $offerData['rejection_reason'] = $currentOffer->rejection_reason;
+                            
+                            // If offer is accepted and has contract, get contract information
+                            if ($currentOffer->status === 'accepted') {
+                                // Load the contract relationship explicitly
+                                $contract = \App\Models\Contract::where('offer_id', $currentOffer->id)->first();
+                                
+                                if ($contract) {
+                                    $offerData['contract_id'] = $contract->id;
+                                    $offerData['contract_status'] = $contract->status;
+                                    $offerData['can_be_completed'] = $contract->canBeCompleted();
+                                    
+                                    \Log::info('Contract data included in offer message', [
+                                        'offer_id' => $currentOffer->id,
+                                        'contract_id' => $contract->id,
+                                        'contract_status' => $contract->status,
+                                        'can_be_completed' => $contract->canBeCompleted(),
+                                    ]);
+                                } else {
+                                    \Log::warning('No contract found for accepted offer', [
+                                        'offer_id' => $currentOffer->id,
+                                        'offer_status' => $currentOffer->status,
+                                    ]);
+                                }
+                            } else {
+                                // Log when contract data is missing
+                                \Log::info('No contract data for offer', [
+                                    'offer_id' => $currentOffer->id,
+                                    'offer_status' => $currentOffer->status,
+                                ]);
+                            }
                         }
                     }
+                    
+                    $messageData['offer_data'] = $offerData;
                 } else {
                     // Fallback if offer_data is invalid
                     $messageData['offer_data'] = null;
@@ -235,12 +291,18 @@ class ChatController extends Controller
             'has_file' => $request->hasFile('file'),
         ]);
         
-        $room = ChatRoom::where('room_id', $request->room_id)
-            ->where(function ($query) use ($user) {
-                $query->where('brand_id', $user->id)
-                      ->orWhere('creator_id', $user->id);
-            })
-            ->first();
+        if ($user->isAdmin()) {
+            // Admin can send messages to any chat room
+            $room = ChatRoom::where('room_id', $request->room_id)->first();
+        } else {
+            // Regular users can only send messages to their own chat rooms
+            $room = ChatRoom::where('room_id', $request->room_id)
+                ->where(function ($query) use ($user) {
+                    $query->where('brand_id', $user->id)
+                          ->orWhere('creator_id', $user->id);
+                })
+                ->first();
+        }
 
         if (!$room) {
             \Log::error('Chat room not found', [
@@ -384,12 +446,18 @@ class ChatController extends Controller
 
         $user = Auth::user();
         
-        $room = ChatRoom::where('room_id', $request->room_id)
-            ->where(function ($query) use ($user) {
-                $query->where('brand_id', $user->id)
-                      ->orWhere('creator_id', $user->id);
-            })
-            ->first();
+        if ($user->isAdmin()) {
+            // Admin can mark messages as read in any chat room
+            $room = ChatRoom::where('room_id', $request->room_id)->first();
+        } else {
+            // Regular users can only mark messages as read in their own chat rooms
+            $room = ChatRoom::where('room_id', $request->room_id)
+                ->where(function ($query) use ($user) {
+                    $query->where('brand_id', $user->id)
+                          ->orWhere('creator_id', $user->id);
+                })
+                ->first();
+        }
 
         if (!$room) {
             return response()->json([
@@ -433,10 +501,10 @@ class ChatController extends Controller
 
         $user = Auth::user();
         
-        if (!$user->isBrand()) {
+        if (!$user->isBrand() && !$user->isAdmin()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only brands can create chat rooms',
+                'message' => 'Only brands and admins can create chat rooms',
             ], 403);
         }
 

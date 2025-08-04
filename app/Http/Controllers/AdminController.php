@@ -225,6 +225,191 @@ class AdminController extends Controller
     }
 
     /**
+     * Get all campaigns with filtering and pagination
+     */
+    public function getCampaigns(Request $request): JsonResponse
+    {
+        $request->validate([
+            'status' => 'nullable|in:pending,approved,rejected,active,inactive',
+            'search' => 'nullable|string|max:255',
+            'per_page' => 'nullable|integer|min:1|max:100',
+            'page' => 'nullable|integer|min:1',
+        ]);
+
+        $status = $request->input('status');
+        $search = $request->input('search');
+        $perPage = $request->input('per_page', 10);
+        $page = $request->input('page', 1);
+
+        $query = Campaign::with(['brand', 'applications']);
+
+        // Filter by status
+        if ($status) {
+            $query->where('status', $status);
+        }
+
+        // Search functionality
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                  ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        $campaigns = $query->orderBy('created_at', 'desc')
+            ->paginate($perPage, ['*'], 'page', $page);
+
+        $transformedCampaigns = $campaigns->getCollection()->map(function ($campaign) {
+            return [
+                'id' => $campaign->id,
+                'title' => $campaign->title,
+                'description' => $campaign->description,
+                'budget' => $campaign->budget,
+                'status' => $campaign->status,
+                'is_active' => $campaign->is_active,
+                'created_at' => $campaign->created_at->format('Y-m-d H:i:s'),
+                'brand' => [
+                    'id' => $campaign->brand->id,
+                    'name' => $campaign->brand->name,
+                    'company_name' => $campaign->brand->company_name,
+                    'email' => $campaign->brand->email,
+                ],
+                'applications_count' => $campaign->applications->count(),
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $transformedCampaigns,
+            'pagination' => [
+                'current_page' => $campaigns->currentPage(),
+                'last_page' => $campaigns->lastPage(),
+                'per_page' => $campaigns->perPage(),
+                'total' => $campaigns->total(),
+            ]
+        ]);
+    }
+
+    /**
+     * Get specific campaign details
+     */
+    public function getCampaign(int $id): JsonResponse
+    {
+        try {
+            $campaign = Campaign::with(['brand', 'applications.creator'])
+                ->findOrFail($id);
+
+            $data = [
+                'id' => $campaign->id,
+                'title' => $campaign->title,
+                'description' => $campaign->description,
+                'budget' => $campaign->budget,
+                'status' => $campaign->status,
+                'is_active' => $campaign->is_active,
+                'created_at' => $campaign->created_at->format('Y-m-d H:i:s'),
+                'brand' => [
+                    'id' => $campaign->brand->id,
+                    'name' => $campaign->brand->name,
+                    'company_name' => $campaign->brand->company_name,
+                    'email' => $campaign->brand->email,
+                ],
+                'applications' => $campaign->applications->map(function ($application) {
+                    return [
+                        'id' => $application->id,
+                        'status' => $application->status,
+                        'proposal' => $application->proposal,
+                        'created_at' => $application->created_at->format('Y-m-d H:i:s'),
+                        'creator' => [
+                            'id' => $application->creator->id,
+                            'name' => $application->creator->name,
+                            'email' => $application->creator->email,
+                        ],
+                    ];
+                }),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $data
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Campaign not found'
+            ], 404);
+        }
+    }
+
+    /**
+     * Approve a campaign
+     */
+    public function approveCampaign(int $id): JsonResponse
+    {
+        try {
+            $campaign = Campaign::findOrFail($id);
+            $campaign->update([
+                'status' => 'approved',
+                'is_active' => true,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Campaign approved successfully'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to approve campaign'
+            ], 500);
+        }
+    }
+
+    /**
+     * Reject a campaign
+     */
+    public function rejectCampaign(int $id): JsonResponse
+    {
+        try {
+            $campaign = Campaign::findOrFail($id);
+            $campaign->update([
+                'status' => 'rejected',
+                'is_active' => false,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Campaign rejected successfully'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to reject campaign'
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete a campaign
+     */
+    public function deleteCampaign(int $id): JsonResponse
+    {
+        try {
+            $campaign = Campaign::findOrFail($id);
+            $campaign->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Campaign deleted successfully'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete campaign'
+            ], 500);
+        }
+    }
+
+    /**
      * Get user statistics
      */
     public function getUserStatistics(): JsonResponse

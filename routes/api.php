@@ -24,17 +24,20 @@ use App\Http\Controllers\CreatorBalanceController;
 use App\Http\Controllers\WithdrawalController;
 use App\Http\Controllers\PostContractWorkflowController;
 use App\Http\Controllers\AdminPayoutController;
+use App\Http\Controllers\BrandPaymentController;
+use App\Http\Controllers\ContractPaymentController;
 
-/*
-|--------------------------------------------------------------------------
-| API Routes
-|--------------------------------------------------------------------------
-|
-| Here is where you can register API routes for your application. These
-| routes are loaded by the RouteServiceProvider within a group which
-| is assigned the "api" middleware group. Enjoy building your API!
-|
-*/
+// Health check endpoint
+Route::get('/health', function () {
+    return response()->json([
+        'status' => 'ok',
+        'message' => 'Nexa API is running',
+        'timestamp' => now()->toISOString()
+    ]);
+});
+
+// Include auth routes
+require __DIR__.'/auth.php';
 
 // File download route with CORS headers
 Route::get('/download/{path}', function ($path) {
@@ -58,22 +61,6 @@ Route::get('/download/{path}', function ($path) {
     ]);
 })->where('path', '.*');
 
-/*
-|--------------------------------------------------------------------------
-| Authentication Routes
-|--------------------------------------------------------------------------
-|
-| Registration endpoint: POST /api/register
-| Expected payload: { "name": "John Doe", "email": "user@example.com", "password": "password", "password_confirmation": "password", "role": "creator" }
-| Returns: { "success": true, "token": "...", "token_type": "Bearer", "user": {...} }
-|
-| Login endpoint: POST /api/login
-| Expected payload: { "email": "user@example.com", "password": "password" }
-| Returns: { "success": true, "token": "...", "token_type": "Bearer", "user": {...} }
-|
-| Usage: Include token in Authorization header: "Bearer YOUR_TOKEN_HERE"
-|
-*/
 
 Route::middleware(['auth:sanctum', 'throttle:user-status'])->get('/user', function (Request $request) {
     return $request->user();
@@ -81,15 +68,6 @@ Route::middleware(['auth:sanctum', 'throttle:user-status'])->get('/user', functi
 
 // Protected routes - require authentication
 Route::middleware(['auth:sanctum'])->group(function () {
-    
-    /*
-    |--------------------------------------------------------------------------
-    | Profile Routes
-    |--------------------------------------------------------------------------
-    |
-    | User profile management endpoints for getting and updating user profiles.
-    |
-    */
     
     // Profile management
     Route::prefix('profile')->group(function () {
@@ -106,17 +84,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/avatar', [BrandProfileController::class, 'uploadAvatar']); // Upload avatar
         Route::delete('/avatar', [BrandProfileController::class, 'deleteAvatar']); // Delete avatar
     });
-    
-    /*
-    |--------------------------------------------------------------------------
-    | Campaign Routes
-    |--------------------------------------------------------------------------
-    |
-    | Campaign management endpoints for brands, creators, and admins.
-    | Different roles have different permissions and access levels.
-    |
-    */
-    
+
     // Campaign CRUD operations (require premium for creators)
     Route::prefix('campaigns')->middleware(['premium.access'])->group(function () {
         Route::get('/', [CampaignController::class, 'index']); // List campaigns
@@ -143,16 +111,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/{campaign}/bids', [BidController::class, 'campaignBids']); // Get bids for campaign
     });
     
-    /*
-    |--------------------------------------------------------------------------
-    | Bid Routes
-    |--------------------------------------------------------------------------
-    |
-    | Bidding system endpoints for creators to bid on campaigns and
-    | brands to manage bids on their campaigns.
-    |
-    */
-    
     // Bid CRUD operations (require premium for creators)
     Route::prefix('bids')->middleware(['premium.access'])->group(function () {
         Route::get('/', [BidController::class, 'index']); // List bids
@@ -171,16 +129,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Create bid on campaign (require premium for creators)
     Route::post('/campaigns/{campaign}/bids', [BidController::class, 'store'])->middleware(['premium.access']); // Create bid on campaign (Creator only)
     
-    /*
-    |--------------------------------------------------------------------------
-    | Campaign Application Routes
-    |--------------------------------------------------------------------------
-    |
-    | Application system endpoints for creators to apply to campaigns and
-    | brands to review applications.
-    |
-    */
-    
     // Campaign Application CRUD operations (require premium for creators)
     Route::prefix('applications')->middleware(['premium.access'])->group(function () {
         Route::get('/', [CampaignApplicationController::class, 'index']); // List applications (role-based)
@@ -197,15 +145,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Get applications for a specific campaign (require premium for creators)
     Route::get('/campaigns/{campaign}/applications', [CampaignApplicationController::class, 'campaignApplications'])->middleware(['premium.access']); // Get campaign applications
     
-    /*
-    |--------------------------------------------------------------------------
-    | Chat Routes
-    |--------------------------------------------------------------------------
-    |
-    | Real-time chat system endpoints for communication between brands and creators.
-    |
-    */
-    
     // Chat room management (require premium for creators)
     Route::prefix('chat')->middleware(['premium.access'])->group(function () {
         Route::get('/rooms', [ChatController::class, 'getChatRooms']); // Get user's chat rooms
@@ -215,15 +154,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/mark-read', [ChatController::class, 'markMessagesAsRead']); // Mark messages as read
         Route::post('/typing-status', [ChatController::class, 'updateTypingStatus']); // Update typing status
     });
-    
-    /*
-    |--------------------------------------------------------------------------
-    | Connection Routes
-    |--------------------------------------------------------------------------
-    |
-    | Direct connection system for brands and creators to connect and chat.
-    |
-    */
     
     // Connection management (require premium for creators)
     Route::prefix('connections')->middleware(['premium.access'])->group(function () {
@@ -241,56 +171,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/rooms/{roomId}/messages', [ConnectionController::class, 'getDirectMessages']); // Get direct messages
         Route::post('/messages', [ConnectionController::class, 'sendDirectMessage']); // Send direct message
     });
-    
-    /*
-    |--------------------------------------------------------------------------
-    | API Documentation Routes
-    |--------------------------------------------------------------------------
-    |
-    | Campaign API Examples:
-    |
-    | GET /api/campaigns - List campaigns (role-based filtering)
-    | POST /api/campaigns - Create campaign (brands only)
-    | GET /api/campaigns/{id} - View campaign details
-    | PUT /api/campaigns/{id} - Update campaign (brand owner only)
-    | DELETE /api/campaigns/{id} - Delete campaign (brand owner only)
-    | POST /api/campaigns/{id}/approve - Approve campaign (admin only)
-    | POST /api/campaigns/{id}/reject - Reject campaign (admin only)
-    | POST /api/campaigns/{id}/toggle-active - Toggle campaign status (brand owner only)
-    | GET /api/campaigns/statistics - Get campaign statistics
-    |
-    | Bid API Examples:
-    |
-    | GET /api/bids - List bids (role-based filtering)
-    | POST /api/campaigns/{id}/bids - Create bid on campaign (creators only)
-    | GET /api/bids/{id} - View bid details
-    | PUT /api/bids/{id} - Update bid (bid owner only)
-    | DELETE /api/bids/{id} - Delete bid (bid owner only)
-    | POST /api/bids/{id}/accept - Accept bid (campaign owner only)
-    | POST /api/bids/{id}/reject - Reject bid (campaign owner only)
-    | POST /api/bids/{id}/withdraw - Withdraw bid (bid owner only)
-    | GET /api/campaigns/{id}/bids - Get campaign bids
-    |
-    | Campaign Application API Examples:
-    |
-    | GET /api/applications - List applications (role-based filtering)
-    | POST /api/campaigns/{id}/applications - Create application on campaign (creators only)
-    | GET /api/applications/{id} - View application details
-    | POST /api/applications/{id}/approve - Approve application (brand owner only)
-    | POST /api/applications/{id}/reject - Reject application (brand owner only)
-    | DELETE /api/applications/{id}/withdraw - Withdraw application (application owner only)
-    | GET /api/campaigns/{id}/applications - Get applications for campaign
-    | GET /api/applications/statistics - Get application statistics
-    |
-    | Notification Routes:
-    | GET /api/notifications - Get user notifications
-    | GET /api/notifications/unread-count - Get unread notification count
-    | POST /api/notifications/{id}/mark-read - Mark notification as read
-    | POST /api/notifications/mark-all-read - Mark all notifications as read
-    | DELETE /api/notifications/{id} - Delete notification
-    | GET /api/notifications/statistics - Get notification statistics
-    |
-    */
 });
 
 // Notification routes (available to all authenticated users)
@@ -330,15 +210,38 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
     Route::get('/payment/transactions', [PaymentController::class, 'getTransactionHistory']);
     
-    /*
-    |--------------------------------------------------------------------------
-    | Hiring System Routes
-    |--------------------------------------------------------------------------
-    |
-    | Routes for the comprehensive hiring system including offers, contracts,
-    | reviews, payments, and withdrawals.
-    |
-    */
+    // Freelancer payment routes
+    Route::prefix('freelancer')->group(function () {
+        // Bank account management
+        Route::post('/register-bank', [PaymentController::class, 'registerBankAccount']); // Register bank account
+        Route::get('/bank-info', [PaymentController::class, 'getBankInfo']); // Get bank info
+        Route::put('/bank-info', [PaymentController::class, 'updateBankInfo']); // Update bank info
+        Route::delete('/bank-info', [PaymentController::class, 'deleteBankInfo']); // Delete bank info
+        
+        // Withdrawal management
+        Route::get('/withdrawals', [PaymentController::class, 'getWithdrawalHistory']); // Get withdrawal history
+        Route::post('/withdrawals', [PaymentController::class, 'requestWithdrawal']); // Request withdrawal
+        
+        // Earnings and balance
+        Route::get('/earnings', [PaymentController::class, 'getEarnings']); // Get earnings and balance
+        Route::get('/withdrawal-methods', [PaymentController::class, 'getWithdrawalMethods']); // Get available withdrawal methods
+    });
+
+    // Brand payment methods (for contract payments)
+    Route::prefix('brand-payment')->group(function () {
+        Route::post('/save-method', [BrandPaymentController::class, 'savePaymentMethod']);
+        Route::get('/methods', [BrandPaymentController::class, 'getPaymentMethods']);
+        Route::post('/set-default', [BrandPaymentController::class, 'setDefaultPaymentMethod']);
+        Route::delete('/methods', [BrandPaymentController::class, 'deletePaymentMethod']);
+    });
+
+    // Contract payment processing
+    Route::prefix('contract-payment')->group(function () {
+        Route::post('/process', [ContractPaymentController::class, 'processContractPayment']);
+        Route::get('/status', [ContractPaymentController::class, 'getContractPaymentStatus']);
+        Route::get('/methods', [ContractPaymentController::class, 'getAvailablePaymentMethods']);
+        Route::post('/retry', [ContractPaymentController::class, 'retryPayment']);
+    });
     
     // Offer routes
     Route::prefix('offers')->group(function () {
@@ -356,6 +259,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/', [ContractController::class, 'index']); // Get contracts
         Route::get('/{id}', [ContractController::class, 'show']); // Get specific contract
         Route::get('/chat-room/{roomId}', [ContractController::class, 'getContractsForChatRoom']); // Get contracts for chat room
+        Route::post('/{id}/activate', [ContractController::class, 'activate']); // Activate contract
         Route::post('/{id}/complete', [ContractController::class, 'complete']); // Complete contract
         Route::post('/{id}/cancel', [ContractController::class, 'cancel']); // Cancel contract
         Route::post('/{id}/terminate', [ContractController::class, 'terminate']); // Terminate contract (brand only)
@@ -398,34 +302,36 @@ Route::middleware(['auth:sanctum'])->group(function () {
 });
 
 // Admin routes
-Route::middleware(['auth:sanctum', 'admin'])->group(function () {
-    Route::prefix('admin')->group(function () {
-        // Dashboard endpoints
-        Route::get('/dashboard-metrics', [AdminController::class, 'getDashboardMetrics']);
-        Route::get('/pending-campaigns', [AdminController::class, 'getPendingCampaigns']);
-        Route::get('/recent-users', [AdminController::class, 'getRecentUsers']);
-        
-        // User management endpoints
-        Route::get('/users', [AdminController::class, 'getUsers']);
-        Route::get('/users/creators', [AdminController::class, 'getCreators']);
-        Route::get('/users/brands', [AdminController::class, 'getBrands']);
-        Route::get('/users/statistics', [AdminController::class, 'getUserStatistics']);
-        Route::patch('/users/{user}/status', [AdminController::class, 'updateUserStatus']);
-        
-        // Payout management endpoints
-        Route::get('/payouts/metrics', [AdminPayoutController::class, 'getPayoutMetrics']);
-        Route::get('/payouts/pending', [AdminPayoutController::class, 'getPendingWithdrawals']);
-        Route::post('/payouts/{id}/process', [AdminPayoutController::class, 'processWithdrawal']);
-        Route::get('/payouts/history', [AdminPayoutController::class, 'getPayoutHistory']);
-        
-        // Dispute management endpoints
-        Route::get('/disputes', [AdminPayoutController::class, 'getDisputedContracts']);
-        Route::post('/disputes/{id}/resolve', [AdminPayoutController::class, 'resolveDispute']);
-    });
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+    // Dashboard endpoints
+    Route::get('/dashboard-metrics', [AdminController::class, 'getDashboardMetrics']);
+    Route::get('/pending-campaigns', [AdminController::class, 'getPendingCampaigns']);
+    Route::get('/recent-users', [AdminController::class, 'getRecentUsers']);
+    
+    // Campaign management
+    Route::get('/campaigns', [AdminController::class, 'getCampaigns']);
+    Route::get('/campaigns/{id}', [AdminController::class, 'getCampaign']);
+    Route::patch('/campaigns/{id}/approve', [AdminController::class, 'approveCampaign']);
+    Route::patch('/campaigns/{id}/reject', [AdminController::class, 'rejectCampaign']);
+    Route::delete('/campaigns/{id}', [AdminController::class, 'deleteCampaign']);
+    
+    // User management
+    Route::get('/users', [AdminController::class, 'getUsers']);
+    Route::get('/users/creators', [AdminController::class, 'getCreators']);
+    Route::get('/users/brands', [AdminController::class, 'getBrands']);
+    Route::get('/users/statistics', [AdminController::class, 'getUserStatistics']);
+    Route::patch('/users/{user}/status', [AdminController::class, 'updateUserStatus']);
+    
+    // Withdrawal methods management
+    Route::apiResource('withdrawal-methods', \App\Http\Controllers\Admin\WithdrawalMethodController::class);
+    Route::put('/withdrawal-methods/{id}/toggle-active', [\App\Http\Controllers\Admin\WithdrawalMethodController::class, 'toggleActive']);
+    
+    // Payout management
+    Route::get('/payouts/pending', [AdminPayoutController::class, 'getPendingWithdrawals']);
+    Route::post('/payouts/{id}/process', [AdminPayoutController::class, 'processWithdrawal']);
+    Route::get('/payouts/verification-report', [AdminPayoutController::class, 'getWithdrawalVerificationReport']);
+    Route::get('/payouts/{id}/verify', [AdminPayoutController::class, 'verifyWithdrawal']);
 });
-
-
-
 
 // Test endpoint for debugging login issues
 Route::get('/test-auth', function () {
@@ -488,11 +394,6 @@ Route::post('/debug-login', function (Request $request) {
         'user_name' => $user->name
     ]);
 });
-
-
-
-
-
 
 // Auth routes
 require __DIR__.'/auth.php';

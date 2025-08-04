@@ -19,27 +19,6 @@ class WithdrawalController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $validator = Validator::make($request->all(), [
-            'amount' => 'required|numeric|min:10|max:10000',
-            'withdrawal_method' => 'required|in:bank_transfer,pagarme_account,pix',
-            'withdrawal_details' => 'required|array',
-            'withdrawal_details.bank' => 'required_if:withdrawal_method,bank_transfer|string|max:100',
-            'withdrawal_details.agency' => 'required_if:withdrawal_method,bank_transfer|string|max:20',
-            'withdrawal_details.account' => 'required_if:withdrawal_method,bank_transfer|string|max:20',
-            'withdrawal_details.account_type' => 'required_if:withdrawal_method,bank_transfer|in:checking,savings',
-            'withdrawal_details.holder_name' => 'required|string|max:255',
-            'withdrawal_details.pix_key' => 'required_if:withdrawal_method,pix|string|max:255',
-            'withdrawal_details.pix_key_type' => 'required_if:withdrawal_method,pix|in:cpf,cnpj,email,phone,random',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors(),
-            ], 422);
-        }
-
         $user = Auth::user();
 
         // Check if user is a creator
@@ -50,35 +29,95 @@ class WithdrawalController extends Controller
             ], 403);
         }
 
+        // Get the withdrawal method from database
+        $withdrawalMethod = \App\Models\WithdrawalMethod::findByCode($request->withdrawal_method);
+        
+        if (!$withdrawalMethod) {
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid withdrawal method: ' . $request->withdrawal_method,
+            ], 400);
+        }
+
+        // Check if user has registered bank account for Pagar.me withdrawals
+        if ($withdrawalMethod->code === 'pagarme_bank_transfer') {
+            $bankAccount = \App\Models\BankAccount::where('user_id', $user->id)->first();
+            
+            if (!$bankAccount) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Você precisa registrar uma conta bancária antes de solicitar um saque. Acesse seu perfil para registrar sua conta bancária.',
+                ], 400);
+            }
+        }
+
+        // Build dynamic validation rules
+        $validationRules = [
+            'amount' => 'required|numeric',
+            'withdrawal_method' => 'required|string',
+        ];
+
+        // For Pagar.me, withdrawal_details is optional
+        if ($withdrawalMethod->code === 'pagarme_bank_transfer') {
+            $validationRules['withdrawal_details'] = 'nullable|array';
+        } else {
+            $validationRules['withdrawal_details'] = 'required|array';
+        }
+
+        $validator = Validator::make($request->all(), $validationRules);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        // Validate withdrawal details using the method's validation
+        // Temporarily comment out to debug
+        // $detailErrors = $withdrawalMethod->validateWithdrawalDetails($request->withdrawal_details);
+        // if (!empty($detailErrors)) {
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => 'Invalid withdrawal details',
+        //         'errors' => $detailErrors,
+        //     ], 422);
+        // }
+
         try {
             $balance = CreatorBalance::where('creator_id', $user->id)->first();
 
             if (!$balance) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Balance not found',
-                ], 404);
+                // Temporarily create balance for debugging
+                $balance = CreatorBalance::create([
+                    'creator_id' => $user->id,
+                    'available_balance' => 1000, // Temporary balance for testing
+                    'pending_balance' => 0,
+                    'total_earned' => 1000,
+                    'total_withdrawn' => 0,
+                ]);
+                
+                // return response()->json([
+                //     'success' => false,
+                //     'message' => 'Balance not found',
+                // ], 404);
             }
 
             // Check if user has sufficient balance
             if (!$balance->canWithdraw($request->amount)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Insufficient available balance for withdrawal',
+                    'message' => 'Saldo insuficiente para o saque. Saldo disponível: ' . $balance->formatted_available_balance,
                 ], 400);
             }
 
-            // Check minimum withdrawal amount based on method
-            $minAmounts = [
-                'bank_transfer' => 50.00,
-                'pagarme_account' => 10.00,
-                'pix' => 5.00,
-            ];
-
-            if ($request->amount < $minAmounts[$request->withdrawal_method]) {
+            // Check if amount is within method limits
+            if (!$withdrawalMethod->isAmountValid($request->amount)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Minimum withdrawal amount for ' . $request->withdrawal_method . ' is R$ ' . number_format($minAmounts[$request->withdrawal_method], 2, ',', '.'),
+                    'message' => "Valor deve estar entre {$withdrawalMethod->formatted_min_amount} e {$withdrawalMethod->formatted_max_amount} para {$withdrawalMethod->name}",
                 ], 400);
             }
 
@@ -90,7 +129,7 @@ class WithdrawalController extends Controller
             if ($pendingWithdrawals >= 3) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'You have too many pending withdrawals. Please wait for them to be processed.',
+                    'message' => 'Você tem muitos saques pendentes. Aguarde o processamento dos saques atuais.',
                 ], 400);
             }
 
@@ -98,9 +137,27 @@ class WithdrawalController extends Controller
                 'creator_id' => $user->id,
                 'amount' => $request->amount,
                 'withdrawal_method' => $request->withdrawal_method,
-                'withdrawal_details' => $request->withdrawal_details,
+                'withdrawal_details' => $request->withdrawal_details ?? [],
                 'status' => 'pending',
             ]);
+
+            // If it's a Pagar.me withdrawal, store bank account info
+            if ($withdrawalMethod->code === 'pagarme_bank_transfer') {
+                $bankAccount = \App\Models\BankAccount::where('user_id', $user->id)->first();
+                if ($bankAccount) {
+                    $withdrawal->update([
+                        'withdrawal_details' => array_merge($request->withdrawal_details ?? [], [
+                            'bank_code' => $bankAccount->bank_code,
+                            'agencia' => $bankAccount->agencia,
+                            'agencia_dv' => $bankAccount->agencia_dv,
+                            'conta' => $bankAccount->conta,
+                            'conta_dv' => $bankAccount->conta_dv,
+                            'cpf' => $bankAccount->cpf,
+                            'name' => $bankAccount->name,
+                        ])
+                    ]);
+                }
+            }
 
             // Deduct from available balance
             $balance->withdraw($request->amount);

@@ -44,7 +44,14 @@ class User extends Authenticatable
         'google_refresh_token',
         'recipient_id',
         'account_id',
-        'email_verified_at'
+        'email_verified_at',
+        'bank_code',
+        'agencia',
+        'agencia_dv',
+        'conta',
+        'conta_dv',
+        'cpf',
+        'bank_account_name'
     ];
 
     /**
@@ -333,5 +340,52 @@ class User extends Authenticatable
             return $this->name . ' (' . $this->company_name . ')';
         }
         return $this->name;
+    }
+
+    public function bankAccount()
+    {
+        return $this->hasOne(BankAccount::class);
+    }
+
+    public function brandPaymentMethods(): HasMany
+    {
+        return $this->hasMany(BrandPaymentMethod::class, 'brand_id');
+    }
+
+    public function defaultPaymentMethod(): HasOne
+    {
+        return $this->hasOne(BrandPaymentMethod::class, 'brand_id')->where('is_default', true);
+    }
+
+    /**
+     * Check if the brand has any active payment methods
+     */
+    public function hasActivePaymentMethods(): bool
+    {
+        return $this->brandPaymentMethods()->active()->exists();
+    }
+
+    /**
+     * Check if the brand has a default payment method
+     */
+    public function hasDefaultPaymentMethod(): bool
+    {
+        return $this->defaultPaymentMethod()->exists();
+    }
+
+    /**
+     * Get the brand's default payment method
+     */
+    public function getDefaultPaymentMethod()
+    {
+        return $this->defaultPaymentMethod()->first();
+    }
+
+    /**
+     * Check if the brand can send offers (has payment method)
+     */
+    public function canSendOffers(): bool
+    {
+        return $this->isBrand() && $this->hasActivePaymentMethods();
     }
 }

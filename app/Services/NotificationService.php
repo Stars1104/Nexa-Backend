@@ -749,22 +749,145 @@ class NotificationService
     public static function notifyCreatorOfPaymentAvailable($contract): void
     {
         try {
-            $notification = Notification::createPaymentAvailable($contract->creator_id, [
-                'contract_id' => $contract->id,
-                'contract_title' => $contract->title,
-                'brand_id' => $contract->brand_id,
-                'brand_name' => $contract->brand->name,
-                'creator_amount' => $contract->creator_amount,
-                'platform_fee' => $contract->platform_fee,
-                'payment_available_at' => now()->toISOString(),
+            $notification = Notification::create([
+                'user_id' => $contract->creator_id,
+                'type' => 'payment_available',
+                'title' => 'Pagamento Disponível',
+                'message' => "O pagamento do contrato '{$contract->title}' está disponível para saque. Valor: R$ " . number_format($contract->creator_amount, 2, ',', '.'),
+                'data' => [
+                    'contract_id' => $contract->id,
+                    'contract_title' => $contract->title,
+                    'amount' => $contract->creator_amount,
+                    'formatted_amount' => 'R$ ' . number_format($contract->creator_amount, 2, ',', '.'),
+                ],
+                'read_at' => null,
             ]);
-            
-            // Send real-time notification via Socket.IO
+
             self::sendSocketNotification($contract->creator_id, $notification);
-            
         } catch (\Exception $e) {
             Log::error('Failed to notify creator of payment available', [
                 'contract_id' => $contract->id,
+                'creator_id' => $contract->creator_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Notify brand of successful payment
+     */
+    public static function notifyBrandOfPaymentSuccessful($contract): void
+    {
+        try {
+            $notification = Notification::create([
+                'user_id' => $contract->brand_id,
+                'type' => 'payment_successful',
+                'title' => 'Pagamento Processado',
+                'message' => "O pagamento do contrato '{$contract->title}' foi processado com sucesso. Valor: R$ " . number_format($contract->budget, 2, ',', '.'),
+                'data' => [
+                    'contract_id' => $contract->id,
+                    'contract_title' => $contract->title,
+                    'amount' => $contract->budget,
+                    'formatted_amount' => 'R$ ' . number_format($contract->budget, 2, ',', '.'),
+                ],
+                'read_at' => null,
+            ]);
+
+            self::sendSocketNotification($contract->brand_id, $notification);
+        } catch (\Exception $e) {
+            Log::error('Failed to notify brand of payment successful', [
+                'contract_id' => $contract->id,
+                'brand_id' => $contract->brand_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Notify creator of payment received
+     */
+    public static function notifyCreatorOfPaymentReceived($contract): void
+    {
+        try {
+            $notification = Notification::create([
+                'user_id' => $contract->creator_id,
+                'type' => 'payment_received',
+                'title' => 'Pagamento Recebido',
+                'message' => "O pagamento do contrato '{$contract->title}' foi recebido. Valor: R$ " . number_format($contract->creator_amount, 2, ',', '.'),
+                'data' => [
+                    'contract_id' => $contract->id,
+                    'contract_title' => $contract->title,
+                    'amount' => $contract->creator_amount,
+                    'formatted_amount' => 'R$ ' . number_format($contract->creator_amount, 2, ',', '.'),
+                ],
+                'read_at' => null,
+            ]);
+
+            self::sendSocketNotification($contract->creator_id, $notification);
+        } catch (\Exception $e) {
+            Log::error('Failed to notify creator of payment received', [
+                'contract_id' => $contract->id,
+                'creator_id' => $contract->creator_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Notify brand of payment failure
+     */
+    public static function notifyBrandOfPaymentFailed($contract): void
+    {
+        try {
+            $notification = Notification::create([
+                'user_id' => $contract->brand_id,
+                'type' => 'payment_failed',
+                'title' => 'Falha no Pagamento',
+                'message' => "O pagamento do contrato '{$contract->title}' falhou. Verifique seus dados de pagamento.",
+                'data' => [
+                    'contract_id' => $contract->id,
+                    'contract_title' => $contract->title,
+                    'amount' => $contract->budget,
+                    'formatted_amount' => 'R$ ' . number_format($contract->budget, 2, ',', '.'),
+                ],
+                'read_at' => null,
+            ]);
+
+            self::sendSocketNotification($contract->brand_id, $notification);
+        } catch (\Exception $e) {
+            Log::error('Failed to notify brand of payment failed', [
+                'contract_id' => $contract->id,
+                'brand_id' => $contract->brand_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Notify creator of payment pending
+     */
+    public static function notifyCreatorOfPaymentPending($contract): void
+    {
+        try {
+            $notification = Notification::create([
+                'user_id' => $contract->creator_id,
+                'type' => 'payment_pending',
+                'title' => 'Pagamento Pendente',
+                'message' => "O pagamento do contrato '{$contract->title}' está sendo processado. Você será notificado quando for confirmado.",
+                'data' => [
+                    'contract_id' => $contract->id,
+                    'contract_title' => $contract->title,
+                    'amount' => $contract->creator_amount,
+                    'formatted_amount' => 'R$ ' . number_format($contract->creator_amount, 2, ',', '.'),
+                ],
+                'read_at' => null,
+            ]);
+
+            self::sendSocketNotification($contract->creator_id, $notification);
+        } catch (\Exception $e) {
+            Log::error('Failed to notify creator of payment pending', [
+                'contract_id' => $contract->id,
+                'creator_id' => $contract->creator_id,
                 'error' => $e->getMessage()
             ]);
         }

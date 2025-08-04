@@ -14,6 +14,26 @@ use App\Services\NotificationService;
 class ContractController extends Controller
 {
     /**
+     * Emit Socket.IO event for real-time updates
+     */
+    private function emitSocketEvent(string $event, array $data): void
+    {
+        try {
+            if (isset($GLOBALS['socket_server'])) {
+                $io = $GLOBALS['socket_server'];
+                $io->emit($event, $data);
+                Log::info("Socket event emitted: {$event}", $data);
+            } else {
+                Log::warning("Socket server not available for event: {$event}");
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to emit socket event', [
+                'event' => $event,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+    /**
      * Get contracts for the authenticated user
      */
     public function index(Request $request): JsonResponse
@@ -59,6 +79,7 @@ class ContractController extends Controller
                     'is_near_completion' => $contract->is_near_completion,
                     'can_be_completed' => $contract->canBeCompleted(),
                     'can_be_cancelled' => $contract->canBeCancelled(),
+                    'can_be_started' => $contract->canBeStarted(),
                     'is_waiting_for_review' => $contract->isWaitingForReview(),
                     'is_payment_available' => $contract->isPaymentAvailable(),
                     'is_payment_withdrawn' => $contract->isPaymentWithdrawn(),
@@ -263,6 +284,7 @@ class ContractController extends Controller
                     'is_near_completion' => $contract->is_near_completion,
                     'can_be_completed' => $contract->canBeCompleted(),
                     'can_be_cancelled' => $contract->canBeCancelled(),
+                    'can_be_started' => $contract->canBeStarted(),
                     'has_brand_review' => $contract->has_brand_review,
                     'has_creator_review' => $contract->has_creator_review,
                     'has_both_reviews' => $contract->has_both_reviews,
@@ -314,6 +336,105 @@ class ContractController extends Controller
     }
 
     /**
+     * Activate a contract (change status from pending to active)
+     */
+    public function activate(int $id): JsonResponse
+    {
+        $user = Auth::user();
+
+        // Check if user is a brand
+        if (!$user->isBrand()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only brands can activate contracts',
+            ], 403);
+        }
+
+        try {
+            $contract = Contract::where('brand_id', $user->id)
+                ->where('status', 'pending')
+                ->find($id);
+
+            if (!$contract) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Contract not found or cannot be activated',
+                ], 404);
+            }
+
+            if (!$contract->canBeStarted()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Contract cannot be activated',
+                ], 400);
+            }
+
+            $contract->update([
+                'status' => 'active',
+                'workflow_status' => 'active',
+                'started_at' => now(),
+            ]);
+
+            // Emit Socket.IO event for real-time updates
+            $this->emitSocketEvent('contract_activated', [
+                'roomId' => $contract->offer->chatRoom->room_id ?? null,
+                'contractData' => [
+                    'id' => $contract->id,
+                    'title' => $contract->title,
+                    'description' => $contract->description,
+                    'status' => $contract->status,
+                    'workflow_status' => $contract->workflow_status,
+                    'brand_id' => $contract->brand_id,
+                    'creator_id' => $contract->creator_id,
+                    'can_be_completed' => $contract->canBeCompleted(),
+                    'can_be_cancelled' => $contract->canBeCancelled(),
+                    'can_be_started' => $contract->canBeStarted(),
+                    'budget' => $contract->formatted_budget,
+                    'creator_amount' => $contract->formatted_creator_amount,
+                    'platform_fee' => $contract->formatted_platform_fee,
+                    'estimated_days' => $contract->estimated_days,
+                    'started_at' => $contract->started_at?->format('Y-m-d H:i:s'),
+                    'expected_completion_at' => $contract->expected_completion_at?->format('Y-m-d H:i:s'),
+                    'days_until_completion' => $contract->days_until_completion,
+                    'progress_percentage' => $contract->progress_percentage,
+                    'is_overdue' => $contract->isOverdue(),
+                    'is_near_completion' => $contract->is_near_completion,
+                ],
+                'senderId' => $user->id,
+            ]);
+
+            Log::info('Contract activated successfully', [
+                'contract_id' => $contract->id,
+                'brand_id' => $user->id,
+                'creator_id' => $contract->creator_id,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Contract activated successfully!',
+                'data' => [
+                    'contract_id' => $contract->id,
+                    'status' => $contract->status,
+                    'workflow_status' => $contract->workflow_status,
+                    'next_step' => 'work_in_progress',
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error activating contract', [
+                'user_id' => $user->id,
+                'contract_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to activate contract. Please try again.',
+            ], 500);
+        }
+    }
+
+    /**
      * Complete a contract (brand only)
      */
     public function complete(int $id): JsonResponse
@@ -348,6 +469,36 @@ class ContractController extends Controller
             }
 
             if ($contract->complete()) {
+                // Emit Socket.IO event for real-time updates
+                $this->emitSocketEvent('contract_completed', [
+                    'roomId' => $contract->offer->chatRoom->room_id ?? null,
+                    'contractData' => [
+                        'id' => $contract->id,
+                        'title' => $contract->title,
+                        'description' => $contract->description,
+                        'status' => $contract->status,
+                        'workflow_status' => $contract->workflow_status,
+                        'brand_id' => $contract->brand_id,
+                        'creator_id' => $contract->creator_id,
+                        'can_be_completed' => $contract->canBeCompleted(),
+                        'can_be_cancelled' => $contract->canBeCancelled(),
+                        'can_be_started' => $contract->canBeStarted(),
+                        'budget' => $contract->formatted_budget,
+                        'creator_amount' => $contract->formatted_creator_amount,
+                        'platform_fee' => $contract->formatted_platform_fee,
+                        'estimated_days' => $contract->estimated_days,
+                        'started_at' => $contract->started_at?->format('Y-m-d H:i:s'),
+                        'expected_completion_at' => $contract->expected_completion_at?->format('Y-m-d H:i:s'),
+                        'completed_at' => $contract->completed_at?->format('Y-m-d H:i:s'),
+                        'days_until_completion' => $contract->days_until_completion,
+                        'progress_percentage' => $contract->progress_percentage,
+                        'is_overdue' => $contract->isOverdue(),
+                        'is_near_completion' => $contract->is_near_completion,
+                        'can_review' => true,
+                    ],
+                    'senderId' => $user->id,
+                ]);
+
                 Log::info('Contract completed successfully', [
                     'contract_id' => $contract->id,
                     'brand_id' => $user->id,
@@ -510,6 +661,24 @@ class ContractController extends Controller
             }
 
             if ($contract->terminate($request->reason)) {
+                // Emit Socket.IO event for real-time updates
+                $this->emitSocketEvent('contract_terminated', [
+                    'roomId' => $contract->offer->chatRoom->room_id ?? null,
+                    'contractData' => [
+                        'id' => $contract->id,
+                        'title' => $contract->title,
+                        'description' => $contract->description,
+                        'status' => $contract->status,
+                        'workflow_status' => $contract->workflow_status,
+                        'brand_id' => $contract->brand_id,
+                        'creator_id' => $contract->creator_id,
+                        'cancelled_at' => $contract->cancelled_at?->format('Y-m-d H:i:s'),
+                        'cancellation_reason' => $contract->cancellation_reason,
+                    ],
+                    'senderId' => $user->id,
+                    'terminationReason' => $request->reason,
+                ]);
+
                 Log::info('Contract terminated successfully', [
                     'contract_id' => $contract->id,
                     'brand_id' => $user->id,

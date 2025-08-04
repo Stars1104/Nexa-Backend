@@ -387,4 +387,295 @@ class AdminPayoutController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Verify withdrawal accuracy and bank account details
+     */
+    public function verifyWithdrawal(Request $request, int $id): JsonResponse
+    {
+        try {
+            $withdrawal = Withdrawal::with(['creator.bankAccount'])
+                ->find($id);
+
+            if (!$withdrawal) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Withdrawal not found',
+                ], 404);
+            }
+
+            // Get current bank account details
+            $currentBankAccount = \App\Models\BankAccount::where('user_id', $withdrawal->creator_id)->first();
+            
+            // Prepare verification data
+            $verificationData = [
+                'withdrawal' => [
+                    'id' => $withdrawal->id,
+                    'amount' => $withdrawal->formatted_amount,
+                    'withdrawal_method' => $withdrawal->withdrawal_method_label,
+                    'status' => $withdrawal->status,
+                    'transaction_id' => $withdrawal->transaction_id,
+                    'processed_at' => $withdrawal->processed_at ? $withdrawal->processed_at->format('Y-m-d H:i:s') : null,
+                    'created_at' => $withdrawal->created_at->format('Y-m-d H:i:s'),
+                    'withdrawal_details' => $withdrawal->withdrawal_details,
+                ],
+                'creator' => [
+                    'id' => $withdrawal->creator->id,
+                    'name' => $withdrawal->creator->name,
+                    'email' => $withdrawal->creator->email,
+                ],
+                'bank_account_verification' => [
+                    'withdrawal_bank_details' => $this->extractBankDetailsFromWithdrawal($withdrawal),
+                    'current_bank_account' => $currentBankAccount ? [
+                        'bank_code' => $currentBankAccount->bank_code,
+                        'agencia' => $currentBankAccount->agencia,
+                        'agencia_dv' => $currentBankAccount->agencia_dv,
+                        'conta' => $currentBankAccount->conta,
+                        'conta_dv' => $currentBankAccount->conta_dv,
+                        'cpf' => $currentBankAccount->cpf,
+                        'name' => $currentBankAccount->name,
+                    ] : null,
+                    'details_match' => $this->compareBankDetails($withdrawal, $currentBankAccount),
+                ],
+                'verification_summary' => [
+                    'withdrawal_amount_correct' => $this->verifyWithdrawalAmount($withdrawal),
+                    'bank_details_consistent' => $this->compareBankDetails($withdrawal, $currentBankAccount),
+                    'transaction_id_valid' => !empty($withdrawal->transaction_id),
+                    'processing_time_reasonable' => $this->verifyProcessingTime($withdrawal),
+                    'overall_verification_status' => $this->getOverallVerificationStatus($withdrawal, $currentBankAccount),
+                ],
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $verificationData,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error verifying withdrawal', [
+                'withdrawal_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to verify withdrawal',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get withdrawal verification report for multiple withdrawals
+     */
+    public function getWithdrawalVerificationReport(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'start_date' => 'nullable|date',
+                'end_date' => 'nullable|date|after_or_equal:start_date',
+                'status' => 'nullable|in:pending,processing,completed,failed,cancelled',
+                'withdrawal_method' => 'nullable|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            $query = Withdrawal::with(['creator.bankAccount']);
+
+            // Apply filters
+            if ($request->start_date) {
+                $query->where('created_at', '>=', $request->start_date);
+            }
+            if ($request->end_date) {
+                $query->where('created_at', '<=', $request->end_date . ' 23:59:59');
+            }
+            if ($request->status) {
+                $query->where('status', $request->status);
+            }
+            if ($request->withdrawal_method) {
+                $query->where('withdrawal_method', $request->withdrawal_method);
+            }
+
+            $withdrawals = $query->orderBy('created_at', 'desc')->paginate(50);
+
+            $verificationReport = [
+                'summary' => [
+                    'total_withdrawals' => $withdrawals->total(),
+                    'total_amount' => $withdrawals->sum('amount'),
+                    'verification_passed' => 0,
+                    'verification_failed' => 0,
+                    'pending_verification' => 0,
+                ],
+                'withdrawals' => [],
+            ];
+
+            foreach ($withdrawals->items() as $withdrawal) {
+                $currentBankAccount = \App\Models\BankAccount::where('user_id', $withdrawal->creator_id)->first();
+                $verificationStatus = $this->getOverallVerificationStatus($withdrawal, $currentBankAccount);
+                
+                $verificationReport['withdrawals'][] = [
+                    'id' => $withdrawal->id,
+                    'amount' => $withdrawal->formatted_amount,
+                    'withdrawal_method' => $withdrawal->withdrawal_method_label,
+                    'status' => $withdrawal->status,
+                    'transaction_id' => $withdrawal->transaction_id,
+                    'processed_at' => $withdrawal->processed_at ? $withdrawal->processed_at->format('Y-m-d H:i:s') : null,
+                    'creator' => [
+                        'id' => $withdrawal->creator->id,
+                        'name' => $withdrawal->creator->name,
+                        'email' => $withdrawal->creator->email,
+                    ],
+                    'verification_status' => $verificationStatus,
+                    'bank_details_match' => $this->compareBankDetails($withdrawal, $currentBankAccount),
+                    'amount_verification' => $this->verifyWithdrawalAmount($withdrawal),
+                ];
+
+                // Update summary counts
+                switch ($verificationStatus) {
+                    case 'passed':
+                        $verificationReport['summary']['verification_passed']++;
+                        break;
+                    case 'failed':
+                        $verificationReport['summary']['verification_failed']++;
+                        break;
+                    case 'pending':
+                        $verificationReport['summary']['pending_verification']++;
+                        break;
+                }
+            }
+
+            $verificationReport['pagination'] = [
+                'current_page' => $withdrawals->currentPage(),
+                'last_page' => $withdrawals->lastPage(),
+                'per_page' => $withdrawals->perPage(),
+                'total' => $withdrawals->total(),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $verificationReport,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error generating withdrawal verification report', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate verification report',
+            ], 500);
+        }
+    }
+
+    /**
+     * Extract bank details from withdrawal
+     */
+    private function extractBankDetailsFromWithdrawal(Withdrawal $withdrawal): ?array
+    {
+        if (!$withdrawal->withdrawal_details) {
+            return null;
+        }
+
+        return [
+            'bank_code' => $withdrawal->withdrawal_details['bank_code'] ?? null,
+            'agencia' => $withdrawal->withdrawal_details['agencia'] ?? null,
+            'agencia_dv' => $withdrawal->withdrawal_details['agencia_dv'] ?? null,
+            'conta' => $withdrawal->withdrawal_details['conta'] ?? null,
+            'conta_dv' => $withdrawal->withdrawal_details['conta_dv'] ?? null,
+            'cpf' => $withdrawal->withdrawal_details['cpf'] ?? null,
+            'name' => $withdrawal->withdrawal_details['name'] ?? null,
+        ];
+    }
+
+    /**
+     * Compare bank details between withdrawal and current bank account
+     */
+    private function compareBankDetails(Withdrawal $withdrawal, $currentBankAccount): bool
+    {
+        if (!$currentBankAccount || !$withdrawal->withdrawal_details) {
+            return false;
+        }
+
+        $withdrawalDetails = $this->extractBankDetailsFromWithdrawal($withdrawal);
+        
+        if (!$withdrawalDetails) {
+            return false;
+        }
+
+        // Compare key fields
+        $fieldsToCompare = ['bank_code', 'agencia', 'agencia_dv', 'conta', 'conta_dv', 'cpf'];
+        
+        foreach ($fieldsToCompare as $field) {
+            if (($withdrawalDetails[$field] ?? '') !== ($currentBankAccount->$field ?? '')) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Verify withdrawal amount is reasonable
+     */
+    private function verifyWithdrawalAmount(Withdrawal $withdrawal): bool
+    {
+        // Check if amount is positive and reasonable
+        if ($withdrawal->amount <= 0) {
+            return false;
+        }
+
+        // Check if amount is within reasonable limits (e.g., not more than 1 million)
+        if ($withdrawal->amount > 1000000) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Verify processing time is reasonable
+     */
+    private function verifyProcessingTime(Withdrawal $withdrawal): bool
+    {
+        if (!$withdrawal->processed_at) {
+            return true; // Still pending
+        }
+
+        $processingTime = $withdrawal->created_at->diffInHours($withdrawal->processed_at);
+        
+        // Consider processing time reasonable if less than 72 hours
+        return $processingTime <= 72;
+    }
+
+    /**
+     * Get overall verification status
+     */
+    private function getOverallVerificationStatus(Withdrawal $withdrawal, $currentBankAccount): string
+    {
+        if ($withdrawal->status === 'pending' || $withdrawal->status === 'processing') {
+            return 'pending';
+        }
+
+        if ($withdrawal->status === 'failed' || $withdrawal->status === 'cancelled') {
+            return 'failed';
+        }
+
+        // For completed withdrawals, check all verification criteria
+        $amountCorrect = $this->verifyWithdrawalAmount($withdrawal);
+        $bankDetailsMatch = $this->compareBankDetails($withdrawal, $currentBankAccount);
+        $transactionIdValid = !empty($withdrawal->transaction_id);
+        $processingTimeReasonable = $this->verifyProcessingTime($withdrawal);
+
+        if ($amountCorrect && $bankDetailsMatch && $transactionIdValid && $processingTimeReasonable) {
+            return 'passed';
+        }
+
+        return 'failed';
+    }
 }

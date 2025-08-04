@@ -86,6 +86,11 @@ class Offer extends Model
         return $query->where('status', 'rejected');
     }
 
+    public function scopeCancelled($query)
+    {
+        return $query->where('status', 'cancelled');
+    }
+
     // Methods
     public function isPending(): bool
     {
@@ -100,6 +105,11 @@ class Offer extends Model
     public function isRejected(): bool
     {
         return $this->status === 'rejected';
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->status === 'cancelled';
     }
 
     public function isExpired(): bool
@@ -122,6 +132,22 @@ class Offer extends Model
         return $this->isPending() && !$this->isExpired();
     }
 
+    public function cancel(): bool
+    {
+        if (!$this->canBeCancelled()) {
+            return false;
+        }
+
+        $this->update([
+            'status' => 'cancelled',
+        ]);
+
+        // Notify creator about cancellation
+        NotificationService::notifyUserOfOfferCancelled($this);
+
+        return true;
+    }
+
     public function accept(): bool
     {
         if (!$this->canBeAccepted()) {
@@ -133,21 +159,46 @@ class Offer extends Model
             'accepted_at' => now(),
         ]);
 
+        // Calculate platform fee (10%) and creator amount (90%)
+        $platformFee = $this->budget * 0.10;
+        $creatorAmount = $this->budget * 0.90;
+
         // Create contract
-        Contract::create([
+        $contract = Contract::create([
             'offer_id' => $this->id,
             'brand_id' => $this->brand_id,
             'creator_id' => $this->creator_id,
             'title' => $this->title ?? 'Contrato de Projeto',
             'description' => $this->description ?? 'Contrato criado a partir de oferta',
             'budget' => $this->budget,
+            'platform_fee' => $platformFee,
+            'creator_amount' => $creatorAmount,
             'estimated_days' => $this->estimated_days,
             'requirements' => $this->requirements ?? [],
             'started_at' => now(),
             'expected_completion_at' => now()->addDays($this->estimated_days),
-            'platform_fee' => $this->budget * 0.10,
-            'creator_amount' => $this->budget * 0.90,
+            'status' => 'pending', // Set to pending until payment is processed
+            'workflow_status' => 'payment_pending',
         ]);
+
+        // Process automatic payment
+        $paymentService = new \App\Services\AutomaticPaymentService();
+        $paymentResult = $paymentService->processContractPayment($contract);
+
+        if (!$paymentResult['success']) {
+            // If payment fails, update contract status
+            $contract->update([
+                'status' => 'payment_failed',
+                'workflow_status' => 'payment_failed',
+            ]);
+
+            // Log the payment failure
+            \Illuminate\Support\Facades\Log::error('Automatic payment failed for contract', [
+                'contract_id' => $contract->id,
+                'offer_id' => $this->id,
+                'error' => $paymentResult['message'],
+            ]);
+        }
 
         // Notify brand about acceptance
         NotificationService::notifyUserOfOfferAccepted($this);
