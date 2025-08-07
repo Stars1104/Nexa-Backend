@@ -51,7 +51,9 @@ class User extends Authenticatable
         'conta',
         'conta_dv',
         'cpf',
-        'bank_account_name'
+        'bank_account_name',
+        'suspended_until',
+        'suspension_reason'
     ];
 
     /**
@@ -77,6 +79,7 @@ class User extends Authenticatable
         'has_premium' => 'boolean',
         'premium_expires_at' => 'datetime',
         'free_trial_expires_at' => 'datetime',
+        'suspended_until' => 'datetime',
     ];
 
     // Relationships
@@ -259,6 +262,11 @@ class User extends Authenticatable
         return $this->hasOne(CreatorBalance::class, 'creator_id');
     }
 
+    public function favorites(): HasMany
+    {
+        return $this->hasMany(CampaignFavorite::class, 'creator_id');
+    }
+
     public function withdrawals(): HasMany
     {
         return $this->hasMany(Withdrawal::class, 'creator_id');
@@ -387,5 +395,63 @@ class User extends Authenticatable
     public function canSendOffers(): bool
     {
         return $this->isBrand() && $this->hasActivePaymentMethods();
+    }
+
+    /**
+     * Check if user is suspended
+     */
+    public function isSuspended(): bool
+    {
+        return $this->suspended_until && $this->suspended_until->isFuture();
+    }
+
+    /**
+     * Get suspension status
+     */
+    public function getSuspensionStatus(): array
+    {
+        if (!$this->suspended_until) {
+            return [
+                'suspended' => false,
+                'until' => null,
+                'reason' => null,
+                'remaining_days' => 0,
+            ];
+        }
+
+        $remainingDays = max(0, now()->diffInDays($this->suspended_until, false));
+
+        return [
+            'suspended' => $this->suspended_until->isFuture(),
+            'until' => $this->suspended_until,
+            'reason' => $this->suspension_reason,
+            'remaining_days' => $remainingDays,
+        ];
+    }
+
+    /**
+     * Suspend user
+     */
+    public function suspend(int $days, string $reason = null): bool
+    {
+        $this->update([
+            'suspended_until' => now()->addDays($days),
+            'suspension_reason' => $reason,
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Unsuspend user
+     */
+    public function unsuspend(): bool
+    {
+        $this->update([
+            'suspended_until' => null,
+            'suspension_reason' => null,
+        ]);
+
+        return true;
     }
 }

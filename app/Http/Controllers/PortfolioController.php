@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
+use App\Models\User; // Added this import for the new method
 
 class PortfolioController extends Controller
 {
@@ -440,6 +441,109 @@ class PortfolioController extends Controller
                 'profile_complete' => !empty($portfolio->title) && !empty($portfolio->bio),
             ]
         ]);
+    }
+
+    /**
+     * Get creator profile for brands (public view)
+     */
+    public function getCreatorProfile(Request $request, $creatorId): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 401);
+            }
+
+            // Find the creator
+            $creator = User::where('id', $creatorId)
+                ->where('role', 'creator')
+                ->with(['portfolio.items', 'receivedReviews.brand'])
+                ->first();
+
+            if (!$creator) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Creator not found'
+                ], 404);
+            }
+
+            // Get portfolio data
+            $portfolio = $creator->portfolio;
+            
+            // Get reviews
+            $reviews = $creator->receivedReviews()
+                ->with('brand:id,name')
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            // Calculate average rating
+            $averageRating = $reviews->avg('rating') ?? 0;
+            $totalReviews = $reviews->count();
+
+            // Get portfolio items
+            $portfolioItems = $portfolio ? $portfolio->items()->orderBy('order')->get() : collect();
+
+            // Prepare response data (only public information)
+            $responseData = [
+                'creator' => [
+                    'id' => $creator->id,
+                    'name' => $creator->name,
+                    'avatar' => $creator->avatar,
+                    'bio' => $creator->bio,
+                    'state' => $creator->state,
+                    'join_date' => $creator->created_at,
+                    'rating' => round($averageRating, 1),
+                    'total_reviews' => $totalReviews,
+                    'total_campaigns' => $creator->bids()->count(),
+                    'completed_campaigns' => $creator->bids()->where('status', 'completed')->count(),
+                ],
+                'portfolio' => $portfolio ? [
+                    'title' => $portfolio->title,
+                    'bio' => $portfolio->bio,
+                    'profile_picture' => $portfolio->profile_picture_url,
+                    'items_count' => $portfolio->getItemsCount(),
+                    'images_count' => $portfolio->getImagesCount(),
+                    'videos_count' => $portfolio->getVideosCount(),
+                ] : null,
+                'portfolio_items' => $portfolioItems->map(function ($item) {
+                    return [
+                        'id' => $item->id,
+                        'title' => $item->title,
+                        'description' => $item->description,
+                        'file_url' => $item->file_url,
+                        'thumbnail_url' => $item->thumbnail_url,
+                        'media_type' => $item->media_type,
+                        'file_size' => $item->formatted_file_size,
+                        'order' => $item->order,
+                    ];
+                }),
+                'reviews' => $reviews->map(function ($review) {
+                    return [
+                        'id' => $review->id,
+                        'brand_name' => $review->brand->name ?? 'Unknown Brand',
+                        'rating' => $review->rating,
+                        'comment' => $review->comment,
+                        'created_at' => $review->created_at,
+                    ];
+                }),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $responseData
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to get creator profile: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get creator profile'
+            ], 500);
+        }
     }
 
     /**

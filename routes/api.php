@@ -25,6 +25,7 @@ use App\Http\Controllers\WithdrawalController;
 use App\Http\Controllers\PostContractWorkflowController;
 use App\Http\Controllers\AdminPayoutController;
 use App\Http\Controllers\BrandPaymentController;
+use App\Http\Controllers\CampaignTimelineController;
 use App\Http\Controllers\ContractPaymentController;
 
 // Health check endpoint
@@ -95,20 +96,21 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/status/{status}', [CampaignController::class, 'getCampaignsByStatus']); // Get campaigns by status
         Route::post('/', [CampaignController::class, 'store']); // Create campaign (Brand only)
         Route::get('/statistics', [CampaignController::class, 'statistics']); // Get statistics
-        Route::get('/{campaign}', [CampaignController::class, 'show']); // View campaign
-        Route::put('/{campaign}', [CampaignController::class, 'update']); // Update campaign (Brand only)
-        Route::delete('/{campaign}', [CampaignController::class, 'destroy']); // Delete campaign (Brand only)
+        Route::get('/favorites', [CampaignController::class, 'getFavorites']); // Get favorite campaigns (Creator only)
         
-        // Admin operations
+        // Specific campaign operations (must come before {campaign} route)
         Route::patch('/{campaign}/approve', [CampaignController::class, 'approve']); // Approve campaign (Admin only)
         Route::patch('/{campaign}/reject', [CampaignController::class, 'reject']); // Reject campaign (Admin only)
         Route::patch('/{campaign}/archive', [CampaignController::class, 'archive']); // Archive campaign (Admin/Brand only)
-        
-        // Brand operations
+        Route::patch('/{campaign}/toggle-featured', [CampaignController::class, 'toggleFeatured']); // Toggle featured status (Admin only)
         Route::post('/{campaign}/toggle-active', [CampaignController::class, 'toggleActive']); // Toggle active status (Brand only)
-        
-        // Campaign bids
+        Route::post('/{campaign}/toggle-favorite', [CampaignController::class, 'toggleFavorite']); // Toggle favorite status (Creator only)
         Route::get('/{campaign}/bids', [BidController::class, 'campaignBids']); // Get bids for campaign
+        
+        // Generic campaign routes (must come after specific routes)
+        Route::get('/{campaign}', [CampaignController::class, 'show']); // View campaign
+        Route::put('/{campaign}', [CampaignController::class, 'update']); // Update campaign (Brand only)
+        Route::delete('/{campaign}', [CampaignController::class, 'destroy']); // Delete campaign (Brand only)
     });
     
     // Bid CRUD operations (require premium for creators)
@@ -185,7 +187,7 @@ Route::middleware(['auth:sanctum', 'throttle:notifications'])->group(function ()
 });
 
 // Portfolio routes
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth:sanctum', 'premium.access'])->group(function () {
     Route::get('/portfolio', [PortfolioController::class, 'show']);
     Route::put('/portfolio/profile', [PortfolioController::class, 'updateProfile']);
     Route::post('/portfolio/media', [PortfolioController::class, 'uploadMedia']);
@@ -193,6 +195,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::delete('/portfolio/items/{item}', [PortfolioController::class, 'deleteItem']);
     Route::post('/portfolio/reorder', [PortfolioController::class, 'reorderItems']);
     Route::get('/portfolio/statistics', [PortfolioController::class, 'statistics']);
+});
+
+// Creator profile for brands (public view)
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/creators/{creatorId}/profile', [PortfolioController::class, 'getCreatorProfile']);
 });
 
 // Payment routes
@@ -264,6 +271,20 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/{id}/cancel', [ContractController::class, 'cancel']); // Cancel contract
         Route::post('/{id}/terminate', [ContractController::class, 'terminate']); // Terminate contract (brand only)
         Route::post('/{id}/dispute', [ContractController::class, 'dispute']); // Dispute contract
+    });
+    
+    // Campaign Timeline routes
+    Route::prefix('campaign-timeline')->group(function () {
+        Route::get('/', [CampaignTimelineController::class, 'index']); // Get timeline for contract
+        Route::post('/create-milestones', [CampaignTimelineController::class, 'createMilestones']); // Create milestones for contract
+        Route::post('/upload-file', [CampaignTimelineController::class, 'uploadFile']); // Upload file for milestone
+        Route::post('/approve-milestone', [CampaignTimelineController::class, 'approveMilestone']); // Approve milestone
+        Route::post('/complete-milestone', [CampaignTimelineController::class, 'completeMilestone']); // Complete milestone
+        Route::post('/justify-delay', [CampaignTimelineController::class, 'justifyDelay']); // Justify delay
+        Route::post('/mark-delayed', [CampaignTimelineController::class, 'markAsDelayed']); // Mark as delayed
+        Route::post('/extend-timeline', [CampaignTimelineController::class, 'extendTimeline']); // Extend timeline
+        Route::get('/download-file', [CampaignTimelineController::class, 'downloadFile']); // Download file
+        Route::get('/statistics', [CampaignTimelineController::class, 'getStatistics']); // Get timeline statistics
     });
     
     // Review routes

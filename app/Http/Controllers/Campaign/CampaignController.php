@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Campaign\StoreCampaignRequest;
 use App\Http\Requests\Campaign\UpdateCampaignRequest;
 use App\Models\Campaign;
+use App\Models\CampaignFavorite;
 use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
@@ -86,13 +87,28 @@ class CampaignController extends Controller
                 });
             }
 
-            // Sorting
+            // Sorting - Featured campaigns first, then by specified sort
             $sortBy = $request->get('sort_by', 'created_at');
             $sortOrder = $request->get('sort_order', 'desc');
-            $query->orderBy($sortBy, $sortOrder);
+            $query->orderBy('is_featured', 'desc') // Featured campaigns first
+                  ->orderBy($sortBy, $sortOrder);
 
             $perPage = min($request->get('per_page', 15), 100); // Max 100 items per page
             $campaigns = $query->paginate($perPage);
+
+            // Add favorite status for creators
+            if ($user->isCreator()) {
+                $campaignIds = $campaigns->pluck('id');
+                $favorites = CampaignFavorite::where('creator_id', $user->id)
+                    ->whereIn('campaign_id', $campaignIds)
+                    ->pluck('campaign_id')
+                    ->toArray();
+
+                $campaigns->getCollection()->transform(function ($campaign) use ($favorites) {
+                    $campaign->is_favorited = in_array($campaign->id, $favorites);
+                    return $campaign;
+                });
+            }
 
             return response()->json([
                 'success' => true,
@@ -157,7 +173,9 @@ class CampaignController extends Controller
                 $query->byType($request->campaign_type);
             }
 
-            $campaigns = $query->get();
+            $campaigns = $query->orderBy('is_featured', 'desc')
+                              ->orderBy('created_at', 'desc')
+                              ->get();
 
             return response()->json([
                 'success' => true,
@@ -446,6 +464,7 @@ class CampaignController extends Controller
             if ($request->hasFile('attach_file')) {
                 $data['attach_file'] = $this->uploadFile($request->file('attach_file'), 'campaigns/attachments');
             }
+            
             $campaign = Campaign::create($data);
 
             // Notify admin of new campaign creation
@@ -862,6 +881,114 @@ class CampaignController extends Controller
                 'success' => false,
                 'error' => 'Failed to toggle campaign status',
                 'message' => 'An error occurred while toggling the campaign status'
+            ], 500);
+        }
+    }
+
+    /**
+     * Toggle featured status of a campaign (Admin only).
+     */
+    public function toggleFeatured(Campaign $campaign): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            if (!$user->isAdmin()) {
+                return response()->json(['error' => 'Unauthorized. Admin access required.'], 403);
+            }
+
+            $campaign->update(['is_featured' => !$campaign->is_featured]);
+
+            return response()->json([
+                'success' => true,
+                'message' => $campaign->is_featured ? 'Campaign marked as featured successfully.' : 'Campaign unmarked as featured successfully.',
+                'data' => $campaign
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to toggle campaign featured status: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to toggle campaign featured status',
+                'message' => 'An error occurred while toggling campaign featured status'
+            ], 500);
+        }
+    }
+
+    /**
+     * Toggle favorite status of a campaign (Creator only).
+     */
+    public function toggleFavorite(Campaign $campaign): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            if (!$user->isCreator()) {
+                return response()->json(['error' => 'Unauthorized. Creator access required.'], 403);
+            }
+
+            $favorite = CampaignFavorite::where('creator_id', $user->id)
+                ->where('campaign_id', $campaign->id)
+                ->first();
+
+            if ($favorite) {
+                $favorite->delete();
+                $isFavorited = false;
+                $message = 'Campaign removed from favorites successfully.';
+            } else {
+                CampaignFavorite::create([
+                    'creator_id' => $user->id,
+                    'campaign_id' => $campaign->id,
+                ]);
+                $isFavorited = true;
+                $message = 'Campaign added to favorites successfully.';
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'data' => [
+                    'campaign_id' => $campaign->id,
+                    'is_favorited' => $isFavorited
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to toggle campaign favorite status: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to toggle campaign favorite status',
+                'message' => 'An error occurred while toggling campaign favorite status'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get user's favorite campaigns (Creator only).
+     */
+    public function getFavorites(Request $request): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            if (!$user->isCreator()) {
+                return response()->json(['error' => 'Unauthorized. Creator access required.'], 403);
+            }
+
+            $favorites = CampaignFavorite::where('creator_id', $user->id)
+                ->with(['campaign.brand', 'campaign.bids'])
+                ->get()
+                ->pluck('campaign');
+
+            return response()->json([
+                'success' => true,
+                'data' => $favorites,
+                'count' => $favorites->count()
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch favorite campaigns: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to fetch favorite campaigns',
+                'message' => 'An error occurred while fetching favorite campaigns'
             ], 500);
         }
     }

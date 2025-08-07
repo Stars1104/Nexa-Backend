@@ -32,7 +32,8 @@ class Campaign extends Model
         'approved_by',
         'rejection_reason',
         'max_bids',
-        'is_active'
+        'is_active',
+        'is_featured'
     ];
 
     protected $casts = [
@@ -40,6 +41,7 @@ class Campaign extends Model
         'deadline' => 'date',
         'approved_at' => 'datetime',
         'is_active' => 'boolean',
+        'is_featured' => 'boolean',
         'budget' => 'decimal:2',
         'final_price' => 'decimal:2',
     ];
@@ -65,7 +67,15 @@ class Campaign extends Model
         return $this->hasMany(CampaignApplication::class);
     }
 
+    public function favorites(): HasMany
+    {
+        return $this->hasMany(CampaignFavorite::class);
+    }
 
+    public function isFavoritedBy($creatorId): bool
+    {
+        return $this->favorites()->where('creator_id', $creatorId)->exists();
+    }
 
     // Scopes
     public function scopeApproved($query)
@@ -96,6 +106,11 @@ class Campaign extends Model
     public function scopeByType($query, $type)
     {
         return $query->where('campaign_type', $type);
+    }
+
+    public function scopeFeatured($query)
+    {
+        return $query->where('is_featured', true);
     }
 
     // Methods

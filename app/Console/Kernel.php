@@ -25,6 +25,9 @@ class Kernel extends ConsoleKernel
         
         // Check for expired messages every 15 minutes
         $schedule->command('messages:check')->everyFifteenMinutes();
+        
+        // Check timeline deadlines every hour
+        $schedule->command('timeline:check-deadlines')->hourly();
     }
 
     /**

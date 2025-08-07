@@ -85,6 +85,11 @@ class Contract extends Model
         return $this->hasManyThrough(Message::class, Offer::class, 'id', 'chat_room_id', 'offer_id', 'chat_room_id');
     }
 
+    public function timeline(): HasMany
+    {
+        return $this->hasMany(CampaignTimeline::class);
+    }
+
     // Scopes
     public function scopeActive($query)
     {
