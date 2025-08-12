@@ -158,100 +158,69 @@ class PaymentController extends Controller
                 ]
             ];
 
-            // Check if we're in test mode (development only)
-            $testMode = env('APP_ENV') === 'local' || 
-                       ($request->has('test_mode') && $request->test_mode === 'true') ||
-                       env('PAGARME_TEST_MODE', 'false') === 'true';
-            
-            if ($testMode) {
-                // Simulate successful payment for testing
-                Log::info('Test mode: Simulating successful payment', [
-                    'user_id' => $user->id,
-                    'test_mode' => true,
-                    'reason' => env('APP_ENV') === 'local' ? 'local_environment' : 'explicit_test_mode'
-                ]);
-                
-                $paymentResponse = [
-                    'id' => 'test_order_' . time(),
-                    'status' => 'paid',
-                    'charges' => [
-                        [
-                            'id' => 'test_charge_' . time(),
-                            'status' => 'paid',
-                            'payment_method_details' => [
-                                'card' => [
-                                    'brand' => 'visa',
-                                    'last_four_digits' => '1111'
-                                ]
-                            ]
-                        ]
-                    ]
-                ];
-            } else {
-                // Make request to Pagar.me with timeout
-                try {
-                    $response = Http::timeout(30)->withHeaders([
-                        'Authorization' => 'Basic ' . base64_encode($this->apiKey . ':'),
-                        'Content-Type' => 'application/json',
-                    ])->post($this->baseUrl . '/orders', $paymentData);
+            // Make request to Pagar.me with timeout
+            try {
+                $response = Http::timeout(30)->withHeaders([
+                    'Authorization' => 'Basic ' . base64_encode($this->apiKey . ':'),
+                    'Content-Type' => 'application/json',
+                ])->post($this->baseUrl . '/orders', $paymentData);
 
-                    if (!$response->successful()) {
-                        Log::error('Pagar.me payment failed', [
-                            'user_id' => $user->id,
-                            'response' => $response->json(),
-                            'status' => $response->status()
-                        ]);
-
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'Payment processing failed. Please try again.',
-                            'error' => $response->json()
-                        ], 400);
-                    }
-
-                    $paymentResponse = $response->json();
-                } catch (\Exception $e) {
-                    Log::error('Pagar.me request exception', [
+                if (!$response->successful()) {
+                    Log::error('Pagar.me payment failed', [
                         'user_id' => $user->id,
-                        'error' => $e->getMessage(),
-                        'trace' => $e->getTraceAsString()
+                        'response' => $response->json(),
+                        'status' => $response->status()
                     ]);
 
-                    // If it's a network timeout or connection issue, fall back to test mode
-                    if (str_contains($e->getMessage(), 'timeout') || 
-                        str_contains($e->getMessage(), 'connection') ||
-                        str_contains($e->getMessage(), 'cURL error 28')) {
-                        
-                        Log::info('Falling back to test mode due to Pagar.me connectivity issues', [
-                            'user_id' => $user->id,
-                            'error' => $e->getMessage()
-                        ]);
-                        
-                        $paymentResponse = [
-                            'id' => 'fallback_order_' . time(),
-                            'status' => 'paid',
-                            'charges' => [
-                                [
-                                    'id' => 'fallback_charge_' . time(),
-                                    'status' => 'paid',
-                                    'payment_method_details' => [
-                                        'card' => [
-                                            'brand' => 'visa',
-                                            'last_four_digits' => '1111'
-                                        ]
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Payment processing failed. Please try again.',
+                        'error' => $response->json()
+                    ], 400);
+                }
+
+                $paymentResponse = $response->json();
+            } catch (\Exception $e) {
+                Log::error('Pagar.me request exception', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+
+                // If it's a network timeout or connection issue, fall back to fallback mode
+                if (str_contains($e->getMessage(), 'timeout') || 
+                    str_contains($e->getMessage(), 'connection') ||
+                    str_contains($e->getMessage(), 'cURL error 28')) {
+                    
+                    Log::info('Falling back to fallback mode due to Pagar.me connectivity issues', [
+                        'user_id' => $user->id,
+                        'error' => $e->getMessage()
+                    ]);
+                    
+                    $paymentResponse = [
+                        'id' => 'fallback_order_' . time(),
+                        'status' => 'paid',
+                        'charges' => [
+                            [
+                                'id' => 'fallback_charge_' . time(),
+                                'status' => 'paid',
+                                'payment_method_details' => [
+                                    'card' => [
+                                        'brand' => 'visa',
+                                        'last_four_digits' => '1111'
                                     ]
                                 ]
                             ]
-                        ];
-                    } else {
-                        DB::rollBack();
+                        ]
+                    ];
+                } else {
+                    DB::rollBack();
 
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'Payment service temporarily unavailable. Please try again in a few moments.',
-                            'error' => $e->getMessage()
-                        ], 503);
-                    }
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Payment service temporarily unavailable. Please try again in a few moments.',
+                        'error' => $e->getMessage()
+                    ], 503);
                 }
             }
             $order = $paymentResponse;

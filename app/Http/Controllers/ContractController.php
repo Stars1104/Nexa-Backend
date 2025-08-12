@@ -33,6 +33,98 @@ class ContractController extends Controller
             ]);
         }
     }
+
+    /**
+     * Send automatic approval messages to both parties
+     */
+    private function sendApprovalMessages($contract): void
+    {
+        try {
+            $chatRoom = $contract->offer->chatRoom;
+            $brand = $contract->brand;
+            $creator = $contract->creator;
+
+            // Message for creator
+            $creatorMessage = "🩷 Parabéns, você foi aprovada em mais uma campanha da NEXA!\n\n" .
+                "Estamos muito felizes em contar com você e esperamos que mostre toda sua criatividade, comprometimento e qualidade para representar bem a marca e a nossa plataforma.\n\n" .
+                "Antes de começar, fique atenta aos pontos abaixo para garantir uma parceria de sucesso:\n\n" .
+                "• Confirme seu endereço de envio o quanto antes, para que o produto possa ser encaminhado sem atrasos.\n" .
+                "• Você devera entregar o roteiro da campanha em até 5 dias úteis.\n" .
+                "• É essencial seguir todas as orientações da marca presentes no briefing.\n" .
+                "• Aguarde a aprovação do roteiro antes de gravar o conteúdo.\n" .
+                "• Após a aprovação do roteiro, o conteúdo final deve ser entregue em até 5 dias úteis.\n" .
+                "• O vídeo deve ser enviado com qualidade profissional, e poderá passar por até 2 solicitações de ajustes, caso não esteja conforme o briefing.\n" .
+                "• Pedimos que mantenha o retorno rápido nas mensagens dentro do chat da plataforma.\n\n" .
+                "Atenção para algumas regras importantes:\n\n" .
+                "✔ Toda a comunicação deve acontecer exclusivamente pelo chat da Anexa.\n" .
+                "✘ Não é permitido compartilhar dados bancários, e-mails ou número de WhatsApp dentro da plataforma.\n" .
+                "⚠️ O não cumprimento dos prazos ou regras pode acarretar em penalizações ou banimento.\n" .
+                "🚫 Caso a campanha seja cancelada, o produto deverá ser devolvido, e a criadora poderá ser punida.\n\n" .
+                "Estamos aqui para garantir a melhor experiência para criadoras e marcas. Boa campanha! 💼💡";
+
+            // Message for brand
+            $brandMessage = "🩷 Parabéns pela uma parceria iniciada com uma criadora da nossa plataforma!\n\n" .
+                "Para garantir o melhor resultado possível, é essencial que você oriente a criadora com detalhamento e clareza sobre como deseja que o conteúdo seja feito quanto mais específica for a comunicação, maior será a qualidade da entrega.\n\n" .
+                "Aqui estão os próximos passos importantes:\n\n" .
+                "• Insira o valor da campanha na aba \"Saldo\" da plataforma.\n" .
+                "• Assim que a criadora enviar o conteúdo pronto e editado, você poderá liberar o pagamento clicando em \"Finalizar Campanha\" e avaliando o trabalho entregue.\n" .
+                "• Reforce com a criadora os pontos principais do briefing para que o vídeo esteja alinhado com o objetivo da marca.\n" .
+                "• Caso o conteúdo não esteja de acordo com o solicitado, serão permitidos até dois pedidos de ajustes por vídeo.\n\n" .
+                "Regras importantes que garantem a segurança da campanha:\n\n" .
+                "✔ Toda comunicação deve ser feita exclusivamente pelo chat da NEXA.\n" .
+                "✘ Não é permitido compartilhar dados bancários, contatos pessoais ou números de WhatsApp com a criadora.\n" .
+                "⚠️ O descumprimento dos prazos ou das regras pode resultar em advertência ou bloqueio do perfil.\n" .
+                "🚫 Caso a campanha precise ser cancelada, o produto enviado deve ser solicitado de volta, e a criadora poderá ser penalizada conforme as diretrizes da plataforma.\n\n" .
+                "A NEXA está aqui para facilitar conexões seguras e profissionais. Conte conosco para apoiar o sucesso da sua campanha! 💼📢";
+
+            // Create messages in the chat room
+            \App\Models\Message::create([
+                'chat_room_id' => $chatRoom->id,
+                'sender_id' => $brand->id,
+                'message' => $creatorMessage,
+                'message_type' => 'text',
+                'is_system_message' => true,
+            ]);
+
+            \App\Models\Message::create([
+                'chat_room_id' => $chatRoom->id,
+                'sender_id' => $brand->id,
+                'message' => $brandMessage,
+                'message_type' => 'text',
+                'is_system_message' => true,
+            ]);
+
+            // Send automatic quote message
+            $quoteMessage = "💼 **Detalhes da Campanha:**\n" .
+                "• **Orçamento:** {$contract->formatted_budget}\n" .
+                "• **Duração:** {$contract->estimated_days} dias\n" .
+                "• **Status:** Ativa\n\n" .
+                "A campanha está agora ativa e ambas as partes podem começar a trabalhar juntas. Por favor, use o chat para todas as comunicações e siga as diretrizes da plataforma.";
+
+            \App\Models\Message::create([
+                'chat_room_id' => $chatRoom->id,
+                'sender_id' => $brand->id,
+                'message' => $quoteMessage,
+                'message_type' => 'text',
+                'is_system_message' => true,
+            ]);
+
+            Log::info('Approval messages sent successfully', [
+                'contract_id' => $contract->id,
+                'chat_room_id' => $chatRoom->id,
+                'brand_id' => $brand->id,
+                'creator_id' => $creator->id,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to send approval messages', [
+                'contract_id' => $contract->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+
     /**
      * Get contracts for the authenticated user
      */
@@ -375,6 +467,9 @@ class ContractController extends Controller
                 'started_at' => now(),
             ]);
 
+            // Send automatic messages to both parties
+            $this->sendApprovalMessages($contract);
+
             // Emit Socket.IO event for real-time updates
             $this->emitSocketEvent('contract_activated', [
                 'roomId' => $contract->offer->chatRoom->room_id ?? null,
@@ -499,15 +594,15 @@ class ContractController extends Controller
                     'senderId' => $user->id,
                 ]);
 
-                Log::info('Contract completed successfully', [
-                    'contract_id' => $contract->id,
-                    'brand_id' => $user->id,
-                    'creator_id' => $contract->creator_id,
-                ]);
+                            Log::info('Campaign completed successfully', [
+                'contract_id' => $contract->id,
+                'brand_id' => $user->id,
+                'creator_id' => $contract->creator_id,
+            ]);
 
                 return response()->json([
                     'success' => true,
-                    'message' => 'Contract completed successfully! Please submit a review to release payment to the creator.',
+                    'message' => 'Campaign completed successfully! Please submit a review to release payment to the creator.',
                     'data' => [
                         'contract_id' => $contract->id,
                         'status' => $contract->status,
@@ -519,12 +614,12 @@ class ContractController extends Controller
             } else {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Failed to complete contract',
+                    'message' => 'Failed to complete campaign',
                 ], 500);
             }
 
         } catch (\Exception $e) {
-            Log::error('Error completing contract', [
+            Log::error('Error completing campaign', [
                 'user_id' => $user->id,
                 'contract_id' => $id,
                 'error' => $e->getMessage(),
@@ -532,7 +627,7 @@ class ContractController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to complete contract. Please try again.',
+                'message' => 'Failed to complete campaign. Please try again.',
             ], 500);
         }
     }

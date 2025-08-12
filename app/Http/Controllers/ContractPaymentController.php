@@ -122,57 +122,30 @@ class ContractPaymentController extends Controller
                 ]
             ];
 
-            // Check if we're in test mode
-            $testMode = env('APP_ENV') === 'local' || 
-                       env('PAGARME_TEST_MODE', 'false') === 'true';
+            // Make actual request to Pagar.me
+            $response = Http::withHeaders([
+                'Authorization' => 'Basic ' . base64_encode($this->apiKey . ':'),
+                'Content-Type' => 'application/json',
+            ])->post($this->baseUrl . '/orders', $orderData);
 
-            if ($testMode) {
-                // Simulate successful payment for testing
-                $paymentResponse = [
-                    'id' => 'test_order_' . time(),
-                    'status' => 'paid',
-                    'charges' => [
-                        [
-                            'id' => 'test_charge_' . time(),
-                            'status' => 'paid',
-                            'amount' => (int)($contract->budget * 100),
-                            'payment_method_details' => [
-                                'card' => [
-                                    'brand' => $paymentMethod->card_brand ?? 'visa',
-                                    'last_four_digits' => $paymentMethod->card_last4 ?? '1234',
-                                ]
-                            ],
-                            'paid_amount' => (int)($contract->budget * 100),
-                            'paid_at' => now()->toISOString(),
-                        ]
-                    ]
-                ];
-            } else {
-                // Make actual request to Pagar.me
-                $response = Http::withHeaders([
-                    'Authorization' => 'Basic ' . base64_encode($this->apiKey . ':'),
-                    'Content-Type' => 'application/json',
-                ])->post($this->baseUrl . '/orders', $orderData);
+            if (!$response->successful()) {
+                Log::error('Pagar.me order creation failed', [
+                    'contract_id' => $contract->id,
+                    'brand_id' => $user->id,
+                    'response' => $response->json(),
+                    'status' => $response->status()
+                ]);
 
-                if (!$response->successful()) {
-                    Log::error('Pagar.me order creation failed', [
-                        'contract_id' => $contract->id,
-                        'brand_id' => $user->id,
-                        'response' => $response->json(),
-                        'status' => $response->status()
-                    ]);
+                DB::rollBack();
 
-                    DB::rollBack();
-
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Payment processing failed. Please check your payment method and try again.',
-                        'error' => $response->json()
-                    ], 400);
-                }
-
-                $paymentResponse = $response->json();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment processing failed. Please check your payment method and try again.',
+                    'error' => $response->json()
+                ], 400);
             }
+
+            $paymentResponse = $response->json();
 
             $order = $paymentResponse;
             $charge = $order['charges'][0] ?? null;

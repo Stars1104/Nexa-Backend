@@ -24,12 +24,14 @@ class Message extends Model
         'read_at',
         'offer_data',
         'is_sender',
+        'is_system_message',
     ];
 
     protected $casts = [
         'is_read' => 'boolean',
         'read_at' => 'datetime',
         'offer_data' => 'array',
+        'is_system_message' => 'boolean',
     ];
 
     public function chatRoom(): BelongsTo

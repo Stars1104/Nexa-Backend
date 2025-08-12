@@ -188,7 +188,7 @@ class Contract extends Model
      */
     public function isWaitingForReview(): bool
     {
-        return $this->status === 'completed' && $this->workflow_status === 'waiting_review';
+        return $this->status === 'completed' && $this->workflow_status === 'waiting_creator_review';
     }
 
     /**
@@ -263,35 +263,30 @@ class Contract extends Model
      */
     public function processPaymentAfterReview(): bool
     {
-        // Only process payment for completed contracts with reviews
-        if (!$this->isWaitingForReview() || !$this->review || $this->status !== 'completed') {
+        // Only process payment for completed contracts where creator has reviewed the brand
+        if ($this->status !== 'completed' || $this->workflow_status !== 'waiting_creator_review') {
             return false;
         }
 
-        // Calculate 95% for creator, 5% for platform
-        $creatorAmount = $this->budget * 0.95;
-        $platformFee = $this->budget * 0.05;
+        // Check if creator has submitted a review
+        $creatorReview = $this->reviews()->where('reviewer_id', $this->creator_id)->first();
+        if (!$creatorReview) {
+            return false;
+        }
 
-        // Create payment record
-        JobPayment::create([
-            'contract_id' => $this->id,
-            'brand_id' => $this->brand_id,
-            'creator_id' => $this->creator_id,
-            'total_amount' => $this->budget,
-            'platform_fee' => $platformFee,
-            'creator_amount' => $creatorAmount,
-            'payment_method' => 'platform_escrow',
-            'status' => 'completed', // Mark as completed since funds are available
-        ]);
+        // Update payment status to completed
+        if ($this->payment) {
+            $this->payment->update([
+                'status' => 'completed',
+            ]);
+        }
 
         // Update creator balance
-        $this->updateCreatorBalance($creatorAmount);
+        $this->updateCreatorBalance($this->creator_amount);
 
         // Update workflow status
         $this->update([
             'workflow_status' => 'payment_available',
-            'platform_fee' => $platformFee,
-            'creator_amount' => $creatorAmount,
         ]);
 
         // Notify creator that funds are available
@@ -382,10 +377,28 @@ class Contract extends Model
             return false;
         }
 
+        // Calculate payment amounts
+        $creatorAmount = $this->budget * 0.95;
+        $platformFee = $this->budget * 0.05;
+
+        // Create payment record immediately when brand completes the campaign
+        JobPayment::create([
+            'contract_id' => $this->id,
+            'brand_id' => $this->brand_id,
+            'creator_id' => $this->creator_id,
+            'total_amount' => $this->budget,
+            'platform_fee' => $platformFee,
+            'creator_amount' => $creatorAmount,
+            'payment_method' => 'platform_escrow',
+            'status' => 'pending_release', // Payment is pending until creator reviews
+        ]);
+
         $this->update([
             'status' => 'completed',
             'completed_at' => now(),
-            'workflow_status' => 'waiting_review', // New workflow status
+            'workflow_status' => 'waiting_creator_review', // Waiting for creator to review brand
+            'platform_fee' => $platformFee,
+            'creator_amount' => $creatorAmount,
         ]);
 
         // Send chat message to inform both parties about contract completion
@@ -412,20 +425,32 @@ class Contract extends Model
             })->first();
 
             if ($chatRoom) {
-                // Create a system message about contract completion
-                \App\Models\Message::create([
-                    'chat_room_id' => $chatRoom->id,
-                    'sender_id' => $this->brand_id, // Brand sends the message
-                    'message' => "🎉 Contrato finalizado com sucesso! Por favor, avalie o trabalho do criador para liberar o pagamento.",
-                    'message_type' => 'system',
-                ]);
+                // Message for brand asking for review
+                $brandReviewMessage = "🎉 Campaign completed successfully!\n\n" .
+                    "The campaign has been finalized and the payment is ready to be released. " .
+                    "Please submit your review to complete the process and release the payment to the creator.\n\n" .
+                    "Your feedback helps maintain the quality of our platform and supports other users in making informed decisions.";
 
-                // Also send a message to the creator
+                // Message for creator about payment release
+                $creatorPaymentMessage = "🎉 Campaign completed successfully!\n\n" .
+                    "The brand has finalized the campaign and the payment is ready to be released. " .
+                    "To receive your payment, please submit a review of the brand.\n\n" .
+                    "After both reviews are submitted, you will be able to withdraw your payment.";
+
                 \App\Models\Message::create([
                     'chat_room_id' => $chatRoom->id,
                     'sender_id' => $this->brand_id,
-                    'message' => "✅ Seu contrato foi finalizado! Aguardando avaliação da marca para receber o pagamento.",
-                    'message_type' => 'system',
+                    'message' => $brandReviewMessage,
+                    'message_type' => 'text',
+                    'is_system_message' => true,
+                ]);
+
+                \App\Models\Message::create([
+                    'chat_room_id' => $chatRoom->id,
+                    'sender_id' => $this->brand_id,
+                    'message' => $creatorPaymentMessage,
+                    'message_type' => 'text',
+                    'is_system_message' => true,
                 ]);
             }
         } catch (\Exception $e) {

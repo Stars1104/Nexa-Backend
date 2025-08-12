@@ -17,14 +17,6 @@ Route::get('/', function () {
     return ['Laravel' => app()->version()];
 });
 
-// Test route to verify CORS headers
-Route::get('/test-cors', function () {
-    return response()->json([
-        'message' => 'CORS test successful',
-        'timestamp' => now()->toISOString()
-    ]);
-});
-
 // Route to serve files with CORS headers
 Route::get('/storage/{path}', function ($path) {
     $filePath = storage_path('app/public/' . $path);

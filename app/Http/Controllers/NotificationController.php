@@ -150,36 +150,5 @@ class NotificationController extends Controller
         ]);
     }
 
-    /**
-     * Test notification endpoint (for development only)
-     */
-    public function testNotification(): JsonResponse
-    {
-        $user = Auth::user();
-        
-        try {
-            $notification = Notification::create([
-                'user_id' => $user->id,
-                'type' => 'test_notification',
-                'title' => 'Test Notification',
-                'message' => 'This is a test notification to verify real-time functionality.',
-                'data' => ['test' => true],
-                'is_read' => false,
-            ]);
-            
-            // Send real-time notification via Socket.IO
-            \App\Services\NotificationService::sendSocketNotification($user->id, $notification);
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'Test notification sent successfully',
-                'notification' => $notification,
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to send test notification: ' . $e->getMessage(),
-            ], 500);
-        }
-    }
+
 } 

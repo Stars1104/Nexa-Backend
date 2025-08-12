@@ -27,6 +27,7 @@ use App\Http\Controllers\AdminPayoutController;
 use App\Http\Controllers\BrandPaymentController;
 use App\Http\Controllers\CampaignTimelineController;
 use App\Http\Controllers\ContractPaymentController;
+use App\Http\Controllers\GuideController;
 
 // Health check endpoint
 Route::get('/health', function () {
@@ -67,14 +68,20 @@ Route::middleware(['auth:sanctum', 'throttle:user-status'])->get('/user', functi
     return $request->user();
 });
 
-// Protected routes - require authentication
+// Public guide routes (read-only, no authentication required)
+Route::get('/guides', [GuideController::class, 'index']);                 // Get all guides
+Route::get('/guides/{guide}', [GuideController::class, 'show']);          // Get a single guide by ID
+
+
+
+// Authenticated user routes
 Route::middleware(['auth:sanctum'])->group(function () {
     
     // Profile management
     Route::prefix('profile')->group(function () {
         Route::get('/', [ProfileController::class, 'show']); // Get current user profile
         Route::put('/', [ProfileController::class, 'update']); // Update current user profile
-        Route::post('/test-formdata', [ProfileController::class, 'testFormData']); // Test FormData parsing
+
     });
     
     // Brand Profile management
@@ -155,6 +162,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/messages', [ChatController::class, 'sendMessage']); // Send a message
         Route::post('/mark-read', [ChatController::class, 'markMessagesAsRead']); // Mark messages as read
         Route::post('/typing-status', [ChatController::class, 'updateTypingStatus']); // Update typing status
+        Route::post('/rooms/{roomId}/send-guide-messages', [ChatController::class, 'sendGuideMessages']); // Send guide messages when user first enters chat
     });
     
     // Connection management (require premium for creators)
@@ -183,7 +191,7 @@ Route::middleware(['auth:sanctum', 'throttle:notifications'])->group(function ()
     Route::post('/notifications/mark-all-read', [NotificationController::class, 'markAllAsRead']);
     Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
     Route::get('/notifications/statistics', [NotificationController::class, 'statistics']);
-    Route::post('/notifications/test', [NotificationController::class, 'testNotification']); // Test notification endpoint
+    
 });
 
 // Portfolio routes
@@ -320,6 +328,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/payment-available', [PostContractWorkflowController::class, 'getContractsWithPaymentAvailable']); // Get contracts with payment available
         Route::get('/work-history', [PostContractWorkflowController::class, 'getWorkHistory']); // Get work history
     });
+    
+    // Public guide routes (read-only for authenticated users)
+    // Route::get('/guides', [GuideController::class, 'index']);                 // Get all guides
+    // Route::get('/guides/{guide}', [GuideController::class, 'show']);          // Get a single guide by ID
 });
 
 // Admin routes
@@ -352,17 +364,16 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/payouts/{id}/process', [AdminPayoutController::class, 'processWithdrawal']);
     Route::get('/payouts/verification-report', [AdminPayoutController::class, 'getWithdrawalVerificationReport']);
     Route::get('/payouts/{id}/verify', [AdminPayoutController::class, 'verifyWithdrawal']);
+
+    // Guide Management
+    Route::get('/guides', [GuideController::class, 'index']);                 // Get all guides
+    Route::post('/guides', [GuideController::class, 'store']);                // Create a new guide
+    Route::get('/guides/{guide}', [GuideController::class, 'show']);          // Get a single guide by ID (route model binding)
+    Route::put('/guides/{guide}', [GuideController::class, 'update']);        // Update a guide by ID
+    Route::delete('/guides/{guide}', [GuideController::class, 'destroy']);    // Delete a guide by ID
 });
 
-// Test endpoint for debugging login issues
-Route::get('/test-auth', function () {
-    return [
-        'authenticated' => Auth::check(),
-        'user' => Auth::user(),
-        'guard' => Auth::getDefaultDriver(),
-        'guards' => array_keys(config('auth.guards')),
-    ];
-})->middleware('auth:sanctum');
+
 
 // Google OAuth routes
 Route::get('/google/redirect', [GoogleController::class, 'redirectToGoogle'])
@@ -371,50 +382,12 @@ Route::get('/google/redirect', [GoogleController::class, 'redirectToGoogle'])
 Route::get('/google/callback', [GoogleController::class, 'handleGoogleCallback'])
     ->name('google.callback');
 
-Route::get('/google/test-callback', [GoogleController::class, 'testCallback'])
-    ->name('google.test-callback');
+
 
 Route::post('/google/auth', [GoogleController::class, 'handleGoogleWithRole'])
     ->name('google.auth');
 
-// Debug endpoint to test login with specific credentials
-Route::post('/debug-login', function (Request $request) {
-    $email = $request->input('email');
-    $password = $request->input('password');
-    
-    \Log::info('Debug login attempt', [
-        'email' => $email,
-        'password_provided' => !empty($password),
-        'headers' => $request->headers->all(),
-        'user_agent' => $request->userAgent(),
-        'ip' => $request->ip(),
-    ]);
-    
-    $user = \App\Models\User::where('email', $email)->first();
-    
-    if (!$user) {
-        return response()->json([
-            'error' => 'User not found',
-            'email' => $email
-        ], 422);
-    }
-    
-    if (!Hash::check($password, $user->password)) {
-        return response()->json([
-            'error' => 'Password incorrect',
-            'email' => $email,
-            'password_hash' => $user->password
-        ], 422);
-    }
-    
-    return response()->json([
-        'success' => true,
-        'user_found' => true,
-        'password_correct' => true,
-        'user_id' => $user->id,
-        'user_name' => $user->name
-    ]);
-});
+
 
 // Auth routes
 require __DIR__.'/auth.php';

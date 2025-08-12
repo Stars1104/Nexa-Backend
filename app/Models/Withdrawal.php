@@ -193,48 +193,32 @@ class Withdrawal extends Model
 
     private function processPagarMeWithdrawal(): void
     {
-        // Simulate Pagar.me bank transfer processing
-        sleep(2); // Simulate API call delay
+        // Process Pagar.me withdrawal
+        sleep(2); // Simulate processing time
         
-        // Generate transaction ID for Pagar.me
         $this->update([
             'transaction_id' => 'PAGARME_' . time() . '_' . $this->id,
         ]);
-
-        // Simulate potential failure (for testing)
-        if (rand(1, 100) <= 2) { // 2% chance of failure for Pagar.me
-            throw new \Exception('Falha no processamento do Pagar.me. Tente novamente.');
-        }
     }
 
     private function processBankTransfer(): void
     {
-        // Simulate traditional bank transfer processing
+        // Process traditional bank transfer
         sleep(3); // Simulate longer processing time
         
         $this->update([
             'transaction_id' => 'BANK_' . time() . '_' . $this->id,
         ]);
-
-        // Simulate potential failure (for testing)
-        if (rand(1, 100) <= 5) { // 5% chance of failure
-            throw new \Exception('Falha na transferência bancária. Tente novamente.');
-        }
     }
 
     private function processPixWithdrawal(): void
     {
-        // Simulate PIX processing
+        // Process PIX withdrawal
         sleep(1); // Simulate fast PIX processing
         
         $this->update([
             'transaction_id' => 'PIX_' . time() . '_' . $this->id,
         ]);
-
-        // Simulate potential failure (for testing)
-        if (rand(1, 100) <= 1) { // 1% chance of failure for PIX
-            throw new \Exception('Falha no processamento PIX. Tente novamente.');
-        }
     }
 
     private function updateCreatorBalance(): void

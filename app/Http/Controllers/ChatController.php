@@ -9,6 +9,7 @@ use App\Models\CampaignApplication;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
@@ -535,6 +536,146 @@ class ChatController extends Controller
                 'message' => 'Chat room created successfully',
             ],
         ]);
+    }
+
+    /**
+     * Send guide messages when user first enters chat
+     */
+    public function sendGuideMessages(Request $request, string $roomId): JsonResponse
+    {
+        $user = Auth::user();
+        
+        Log::info('sendGuideMessages called', [
+            'user_id' => $user->id,
+            'user_role' => $user->role,
+            'room_id' => $roomId,
+        ]);
+        
+        // Find the chat room and verify user has access
+        $room = ChatRoom::where('room_id', $roomId)
+            ->where(function ($query) use ($user) {
+                $query->where('brand_id', $user->id)
+                      ->orWhere('creator_id', $user->id);
+            })
+            ->first();
+
+        if (!$room) {
+            Log::error('Chat room not found', [
+                'user_id' => $user->id,
+                'room_id' => $roomId,
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Chat room not found or access denied',
+            ], 404);
+        }
+
+        try {
+            // Check if guide messages already exist for this user in this room
+            $existingGuideMessages = Message::where('chat_room_id', $room->id)
+                ->where('sender_id', $user->id)
+                ->where('message_type', 'system')
+                ->where('is_system_message', true)
+                ->exists();
+
+            if ($existingGuideMessages) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Guide messages already sent',
+                ]);
+            }
+
+            // Get the other user in the chat
+            $otherUser = $user->isBrand() ? $room->creator : $room->brand;
+
+            if ($user->isBrand()) {
+                // Message for brand
+                $brandMessage = "🩷 Parabéns pela uma parceria iniciada com uma criadora da nossa plataforma!\n\n" .
+                    "Para garantir o melhor resultado possível, é essencial que você oriente a criadora com detalhamento e clareza sobre como deseja que o conteúdo seja feito quanto mais específica for a comunicação, maior será a qualidade da entrega.\n\n" .
+                    "Aqui estão os próximos passos importantes:\n\n" .
+                    "• Insira o valor da campanha na aba \"Saldo\" da plataforma.\n" .
+                    "• Assim que a criadora enviar o conteúdo pronto e editado, você poderá liberar o pagamento clicando em \"Finalizar Campanha\" e avaliando o trabalho entregue.\n" .
+                    "• Reforce com a criadora os pontos principais do briefing para que o vídeo esteja alinhado com o objetivo da marca.\n" .
+                    "• Caso o conteúdo não esteja de acordo com o solicitado, serão permitidos até dois pedidos de ajustes por vídeo.\n\n" .
+                    "Regras importantes que garantem a segurança da campanha:\n\n" .
+                    "✔ Toda comunicação deve ser feita exclusivamente pelo chat da NEXA.\n" .
+                    "✘ Não é permitido compartilhar dados bancários, contatos pessoais ou números de WhatsApp com a criadora.\n" .
+                    "⚠️ O descumprimento dos prazos ou das regras pode resultar em advertência ou bloqueio do perfil.\n" .
+                    "🚫 Caso a campanha precise ser cancelada, o produto enviado deve ser solicitado de volta, e a criadora poderá ser penalizada conforme as diretrizes da plataforma.\n\n" .
+                    "A NEXA está aqui para facilitar conexões seguras e profissionais. Conte conosco para apoiar o sucesso da sua campanha! 💼📢";
+
+                Message::create([
+                    'chat_room_id' => $room->id,
+                    'sender_id' => $user->id,
+                    'message' => $brandMessage,
+                    'message_type' => 'system',
+                    'is_system_message' => true,
+                ]);
+            } else {
+                // Message for creator
+                $creatorMessage = "🩷 Parabéns, você foi aprovada em mais uma campanha da NEXA!\n\n" .
+                    "Estamos muito felizes em contar com você e esperamos que mostre toda sua criatividade, comprometimento e qualidade para representar bem a marca e a nossa plataforma.\n\n" .
+                    "Antes de começar, fique atenta aos pontos abaixo para garantir uma parceria de sucesso:\n\n" .
+                    "• Confirme seu endereço de envio o quanto antes, para que o produto possa ser encaminhado sem atrasos.\n" .
+                    "• Você devera entregar o roteiro da campanha em até 5 dias úteis.\n" .
+                    "• É essencial seguir todas as orientações da marca presentes no briefing.\n" .
+                    "• Aguarde a aprovação do roteiro antes de gravar o conteúdo.\n" .
+                    "• Após a aprovação do roteiro, o conteúdo final deve ser entregue em até 5 dias úteis.\n" .
+                    "• O vídeo deve ser enviado com qualidade profissional, e poderá passar por até 2 solicitações de ajustes, caso não esteja conforme o briefing.\n" .
+                    "• Pedimos que mantenha o retorno rápido nas mensagens dentro do chat da plataforma.\n\n" .
+                    "Atenção para algumas regras importantes:\n\n" .
+                    "✔ Toda a comunicação deve acontecer exclusivamente pelo chat da Anexa.\n" .
+                    "✘ Não é permitido compartilhar dados bancários, e-mails ou número de WhatsApp dentro da plataforma.\n" .
+                    "⚠️ O não cumprimento dos prazos ou regras pode acarretar em penalizações ou banimento.\n" .
+                    "🚫 Caso a campanha seja cancelada, o produto deverá ser devolvido, e a criadora poderá ser punida.\n\n" .
+                    "Estamos aqui para garantir a melhor experiência para criadoras e marcas. Boa campanha! 💼💡";
+
+                Message::create([
+                    'chat_room_id' => $room->id,
+                    'sender_id' => $user->id,
+                    'message' => $creatorMessage,
+                    'message_type' => 'system',
+                    'is_system_message' => true,
+                ]);
+            }
+
+            // Send automatic quote message
+            $quoteMessage = "💼 **Detalhes da Campanha:**\n" .
+                "• **Status:** Conectado\n\n" .
+                "Você está agora conectado e pode começar a conversar. Por favor, use o chat para todas as comunicações e siga as diretrizes da plataforma.";
+
+            Message::create([
+                'chat_room_id' => $room->id,
+                'sender_id' => $user->id,
+                'message' => $quoteMessage,
+                'message_type' => 'system',
+                'is_system_message' => true,
+            ]);
+
+            Log::info('Guide messages sent successfully', [
+                'chat_room_id' => $room->id,
+                'user_id' => $user->id,
+                'user_role' => $user->role,
+                'messages_created' => 3, // We create 3 messages: guide message + quote message
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Guide messages sent successfully',
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to send guide messages', [
+                'chat_room_id' => $room->id,
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send guide messages',
+            ], 500);
+        }
     }
 
     /**

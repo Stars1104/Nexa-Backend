@@ -12,56 +12,7 @@ use Illuminate\Validation\Rule;
 
 class ProfileController extends Controller
 {
-    /**
-     * Test endpoint for debugging FormData parsing
-     */
-    public function testFormData(Request $request): JsonResponse
-    {
-        error_log("=== FORM DATA TEST ===");
-        error_log("Content-Type: " . $request->header('Content-Type'));
-        error_log("Request method: " . $request->method());
-        error_log("Request all: " . json_encode($request->all()));
-        error_log("Request files: " . json_encode($request->allFiles()));
-        error_log("Raw content length: " . strlen($request->getContent()));
-        error_log("Raw content preview: " . substr($request->getContent(), 0, 500));
-        
-        // Check if it's multipart
-        $contentType = $request->header('Content-Type');
-        $isMultipart = strpos($contentType, 'multipart/form-data') !== false;
-        error_log("Is multipart: " . ($isMultipart ? 'true' : 'false'));
-        
-        // Try manual parsing if needed
-        if ($isMultipart && empty($request->all()) && !empty($request->getContent())) {
-            error_log("Attempting manual parsing...");
-            $parsedData = $this->parseMultipartData($request);
-            error_log("Manually parsed: " . json_encode($parsedData));
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'FormData test completed',
-                'data' => [
-                    'content_type' => $contentType,
-                    'is_multipart' => $isMultipart,
-                    'laravel_parsed' => $request->all(),
-                    'laravel_files' => $request->allFiles(),
-                    'manual_parsed' => $parsedData,
-                    'raw_content_length' => strlen($request->getContent())
-                ]
-            ]);
-        }
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'FormData test completed',
-            'data' => [
-                'content_type' => $contentType,
-                'is_multipart' => $isMultipart,
-                'laravel_parsed' => $request->all(),
-                'laravel_files' => $request->allFiles(),
-                'raw_content_length' => strlen($request->getContent())
-            ]
-        ]);
-    }
+
 
     /**
      * Get the current user's profile

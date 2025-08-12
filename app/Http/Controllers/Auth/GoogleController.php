@@ -13,22 +13,7 @@ use Illuminate\Support\Str;
 
 class GoogleController extends Controller
 {
-    /**
-     * Test endpoint to verify callback is being reached
-     */
-    public function testCallback(Request $request): JsonResponse
-    {
-        \Log::info('Test callback reached', [
-            'query_params' => $request->query(),
-            'headers' => $request->headers->all(),
-        ]);
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'Test callback reached successfully',
-            'params' => $request->query(),
-        ]);
-    }
+
 
     /**
      * Redirect the user to the Google authentication page.

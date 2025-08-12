@@ -589,4 +589,44 @@ class AdminController extends Controller
 
         return 'Pendente';
     }
+
+    /**
+     * Get all guides for admin management
+     */
+    public function getGuides(): JsonResponse
+    {
+        try {
+            $guides = \App\Models\Guide::with('steps')->latest()->get();
+            
+            return response()->json([
+                'success' => true,
+                'data' => $guides
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch guides: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get a specific guide for admin management
+     */
+    public function getGuide($id): JsonResponse
+    {
+        try {
+            $guide = \App\Models\Guide::with('steps')->findOrFail($id);
+            
+            return response()->json([
+                'success' => true,
+                'data' => $guide
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch guide: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 } 
