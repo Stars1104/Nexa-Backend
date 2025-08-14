@@ -8,9 +8,7 @@ const io = new Server(httpServer, {
     cors: {
         origin: [
             "http://localhost:5000",
-            "http://localhost:5173",
-            "http://localhost:3000",
-            "http://localhost:4173"
+            "https://nexacreators.com.br"
         ],
         methods: ["GET", "POST"],
         credentials: true
@@ -371,7 +369,7 @@ const PORT = process.env.SOCKET_PORT || 3001;
 
 httpServer.listen(PORT, () => {
     console.log(`Socket.IO server running on port ${PORT}`);
-    console.log(`CORS enabled for: http://localhost:5000, http://localhost:5173, http://localhost:3000, http://localhost:4173`);
+    console.log(`CORS enabled for: http://localhost:5000, http://localhost:5173, http://nexacreators.com.br, https://nexacreators.com.br`);
 });
 
 module.exports = { io, connectedUsers, userRooms, userNotificationRooms }; 

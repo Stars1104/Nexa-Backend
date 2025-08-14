@@ -176,42 +176,71 @@ class RegisteredUserController extends Controller
             'free_trial_expires_at' => null,
         ]);
 
-        // Fire the Registered event to send email verification
-        event(new Registered($user));
-        
         // Notify admin of new user registration
         \App\Services\NotificationService::notifyAdminOfNewRegistration($user);
         
-        // Generate Sanctum token for the user
-        $token = $user->createToken('auth_token')->plainTextToken;
+        // Send email verification notification
+        $emailSent = $user->sendEmailVerificationNotification();
+        
+        if ($emailSent) {
+            \Log::info('Email verification sent successfully to: ' . $user->email);
+        } else {
+            \Log::warning('Email verification failed for user: ' . $user->email);
+        }
 
-        // Log the user in
-        Auth::login($user);
-
-        return response()->json([
-            'success' => true,
-            'token' => $token,
-            'token_type' => 'Bearer',
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'email_verified_at' => $user->email_verified_at,
-                'role' => $user->role,
-                'whatsapp' => $user->whatsapp,
-                'avatar_url' => $user->avatar_url,
-                'bio' => $user->bio,
-                'company_name' => $user->company_name,
-                'student_verified' => $user->student_verified,
-                'student_expires_at' => $user->student_expires_at,
-                'gender' => $user->gender,
-                'state' => $user->state,
-                'language' => $user->language,
-                'has_premium' => $user->has_premium,
-                'premium_expires_at' => $user->premium_expires_at,
-                'free_trial_expires_at' => $user->free_trial_expires_at,
-            ]
-        ], 201);
+        if ($emailSent) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Registration successful! Please check your email to verify your account.',
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'email_verified_at' => $user->email_verified_at,
+                    'role' => $user->role,
+                    'whatsapp' => $user->whatsapp,
+                    'avatar_url' => $user->avatar_url,
+                    'bio' => $user->bio,
+                    'company_name' => $user->company_name,
+                    'student_verified' => $user->student_verified,
+                    'student_expires_at' => $user->student_expires_at,
+                    'gender' => $user->gender,
+                    'state' => $user->state,
+                    'language' => $user->language,
+                    'has_premium' => $user->has_premium,
+                    'premium_expires_at' => $user->premium_expires_at,
+                    'free_trial_expires_at' => $user->free_trial_expires_at,
+                ],
+                'requires_email_verification' => true
+            ], 201);
+        } else {
+            // Email verification failed, but registration succeeded
+            return response()->json([
+                'success' => true,
+                'message' => 'Registration successful! However, we could not send the verification email. Please contact support.',
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'email_verified_at' => $user->email_verified_at,
+                    'role' => $user->role,
+                    'whatsapp' => $user->whatsapp,
+                    'avatar_url' => $user->avatar_url,
+                    'bio' => $user->bio,
+                    'company_name' => $user->company_name,
+                    'student_verified' => $user->student_verified,
+                    'student_expires_at' => $user->student_expires_at,
+                    'gender' => $user->gender,
+                    'state' => $user->state,
+                    'language' => $user->language,
+                    'has_premium' => $user->has_premium,
+                    'premium_expires_at' => $user->premium_expires_at,
+                    'free_trial_expires_at' => $user->free_trial_expires_at,
+                ],
+                'requires_email_verification' => false,
+                'email_verification_failed' => true
+            ], 201);
+        }
     }
 
     /**

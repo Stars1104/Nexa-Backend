@@ -28,6 +28,7 @@ use App\Http\Controllers\BrandPaymentController;
 use App\Http\Controllers\CampaignTimelineController;
 use App\Http\Controllers\ContractPaymentController;
 use App\Http\Controllers\GuideController;
+use App\Http\Controllers\Admin\BrandRankingController;
 
 // Health check endpoint
 Route::get('/health', function () {
@@ -371,6 +372,10 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/guides/{guide}', [GuideController::class, 'show']);          // Get a single guide by ID (route model binding)
     Route::put('/guides/{guide}', [GuideController::class, 'update']);        // Update a guide by ID
     Route::delete('/guides/{guide}', [GuideController::class, 'destroy']);    // Delete a guide by ID
+    
+    // Brand Rankings
+    Route::get('/brand-rankings', [BrandRankingController::class, 'getBrandRankings']);
+    Route::get('/brand-rankings/comprehensive', [BrandRankingController::class, 'getComprehensiveRankings']);
 });
 
 

@@ -30,9 +30,16 @@ Route::put('/update-password', [NewPasswordController::class, 'update'])
     ->name('password.update');
 
 // Email Verification routes
-Route::get('/verify-email/{id}/{hash}', [VerifyEmailController::class, 'verify'])
-    ->middleware(['auth:sanctum', 'signed', 'throttle:6,1'])
+Route::get('/verify-email/{id}/{hash}', [VerifyEmailController::class, 'verifyFromLink'])
     ->name('verification.verify');
+
+Route::get('/verify-email', [VerifyEmailController::class, 'verify'])
+    ->middleware(['auth:sanctum', 'signed', 'throttle:6,1'])
+    ->name('verification.verify.authenticated');
+
+Route::post('/resend-verification', [VerifyEmailController::class, 'resend'])
+    ->middleware(['auth:sanctum', 'throttle:6,1'])
+    ->name('verification.resend');
 
 Route::post('/email/verification-notification', [EmailVerificationNotificationController::class, 'store'])
     ->middleware(['auth:sanctum', 'throttle:6,1']) 

@@ -39,6 +39,16 @@ class PaymentController extends Controller
             'ip' => $request->ip(),
         ]);
 
+        // Log all request data for debugging (remove in production)
+        Log::info('Full subscription request data for debugging', [
+            'all_data' => $request->all(),
+            'has_card_number' => $request->has('card_number'),
+            'has_card_cvv' => $request->has('card_cvv'),
+            'has_card_holder_name' => $request->has('card_holder_name'),
+            'has_card_expiration_date' => $request->has('card_expiration_date'),
+            'has_cpf' => $request->has('cpf'),
+        ]);
+
         // Check if Pagar.me is configured
         if (empty($this->apiKey)) {
             Log::error('Pagar.me API key not configured');
@@ -48,13 +58,36 @@ class PaymentController extends Controller
             ], 503);
         }
 
-        $request->validate([
-            'card_number' => 'required|string|size:16',
-            'card_holder_name' => 'required|string|max:255',
-            'card_expiration_date' => 'required|string|size:4', // MMYY format
-            'card_cvv' => 'required|string|min:3|max:4',
-            'cpf' => 'required|string|regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/', // CPF format validation
+        // Check if we're in test mode
+        $isTestMode = config('services.pagarme.environment') === 'sandbox' && 
+                     (config('app.env') === 'local' || config('app.env') === 'development');
+        
+        Log::info('Test mode check', [
+            'pagarme_environment' => config('services.pagarme.environment'),
+            'app_env' => config('app.env'),
+            'is_test_mode' => $isTestMode
         ]);
+
+        try {
+            $request->validate([
+                'card_number' => 'required|string|size:16',
+                'card_holder_name' => 'required|string|max:255',
+                'card_expiration_date' => 'required|string|size:4', // MMYY format
+                'card_cvv' => 'required|string|min:3|max:4',
+                'cpf' => 'required|string|regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/', // CPF format validation
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::error('Subscription validation failed', [
+                'errors' => $e->errors(),
+                'request_data' => $request->all(),
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        }
 
         // Validate CPF
         if (!$this->validateCPF($request->cpf)) {
@@ -63,6 +96,71 @@ class PaymentController extends Controller
                 'message' => 'CPF inválido. Por favor, verifique o número.',
                 'errors' => ['cpf' => ['CPF inválido. Use um CPF válido como: 111.444.777-35']]
             ], 422);
+        }
+
+        // If in test mode, process the payment locally
+        if ($isTestMode) {
+            Log::info('Processing subscription in test mode', [
+                'user_id' => auth()->id(),
+                'test_mode' => true
+            ]);
+            
+            try {
+                DB::beginTransaction();
+                
+                $user = auth()->user();
+                
+                // Create a test transaction record
+                $transaction = Transaction::create([
+                    'user_id' => $user->id,
+                    'amount' => 2999, // R$29.99 in cents
+                    'payment_method' => 'credit_card',
+                    'status' => 'paid',
+                    'pagarme_transaction_id' => 'test_' . time(),
+                    'paid_at' => now(),
+                    'expires_at' => now()->addMonth(),
+                ]);
+
+                // Update user premium status
+                $user->update([
+                    'has_premium' => true,
+                    'premium_expires_at' => now()->addMonth(),
+                ]);
+
+                DB::commit();
+
+                Log::info('Test subscription successful', [
+                    'user_id' => $user->id,
+                    'transaction_id' => $transaction->id,
+                    'test_mode' => true
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Test subscription successful',
+                    'test_mode' => true,
+                    'transaction' => [
+                        'id' => $transaction->id,
+                        'status' => 'paid'
+                    ]
+                ]);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Test subscription failed', [
+                    'user_id' => auth()->id(),
+                    'error' => $e->getMessage(),
+                    'test_mode' => true
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Test subscription failed: ' . $e->getMessage(),
+                ], 500);
+            }
+        } else {
+            Log::info('Not in test mode, proceeding with Pagar.me API call', [
+                'test_mode' => false
+            ]);
         }
 
         try {
@@ -133,7 +231,7 @@ class PaymentController extends Controller
                 ],
                 'items' => [
                     [
-                        'amount' => 4999, // Pagar.me expects amount in cents
+                        'amount' => 2999, // Pagar.me expects amount in cents (R$ 29.99)
                         'description' => 'Nexa Premium Subscription - 1 Month',
                         'quantity' => 1,
                         'code' => 'NEXA_PREMIUM_MONTH'
@@ -161,8 +259,9 @@ class PaymentController extends Controller
             // Make request to Pagar.me with timeout
             try {
                 $response = Http::timeout(30)->withHeaders([
-                    'Authorization' => 'Basic ' . base64_encode($this->apiKey . ':'),
+                    'Authorization' => $this->apiKey,
                     'Content-Type' => 'application/json',
+                    'Accept' => 'application/json',
                 ])->post($this->baseUrl . '/orders', $paymentData);
 
                 if (!$response->successful()) {
@@ -244,7 +343,7 @@ class PaymentController extends Controller
                 'user_id' => $user->id,
                 'pagarme_transaction_id' => $charge['id'],
                 'status' => $charge['status'],
-                'amount' => 49.99, // Store as decimal, not cents
+                'amount' => 29.99, // Store as decimal, not cents
                 'payment_method' => 'credit_card',
                 'card_brand' => $charge['payment_method_details']['card']['brand'] ?? null,
                 'card_last4' => $charge['payment_method_details']['card']['last_four_digits'] ?? null,
@@ -270,7 +369,7 @@ class PaymentController extends Controller
                 // Notify admin about successful payment
                 NotificationService::notifyAdminOfPaymentActivity($user, 'premium_subscription_paid', [
                     'transaction_id' => $dbTransaction->id,
-                    'amount' => 'R$ 49,99',
+                    'amount' => 'R$ 29,99',
                     'user_name' => $user->name,
                 ]);
             }
@@ -656,7 +755,7 @@ class PaymentController extends Controller
             return response()->json(['error' => 'Invalid user or missing recipient_id'], 400);
         }
 
-        $amount = 4999; // R$49.99 in cents
+        $amount = 2999; // R$29.99 in cents
 
         try {
             $response = Http::withBasicAuth($apiKey, '')
