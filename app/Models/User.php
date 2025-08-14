@@ -282,6 +282,22 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * Get the user's active subscription
+     */
+    public function activeSubscription(): HasOne
+    {
+        return $this->hasOne(\App\Models\Subscription::class)->where('status', 'active');
+    }
+
+    /**
+     * Get all user subscriptions
+     */
+    public function subscriptions(): HasMany
+    {
+        return $this->hasMany(\App\Models\Subscription::class);
+    }
+
+    /**
      * Check if the user has premium status.
      */
     public function isPremium(): bool

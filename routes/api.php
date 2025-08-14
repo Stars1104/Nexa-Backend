@@ -29,6 +29,7 @@ use App\Http\Controllers\CampaignTimelineController;
 use App\Http\Controllers\ContractPaymentController;
 use App\Http\Controllers\GuideController;
 use App\Http\Controllers\Admin\BrandRankingController;
+use App\Http\Controllers\SubscriptionController;
 
 // Health check endpoint
 Route::get('/health', function () {
@@ -224,6 +225,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/payment/subscription', [PaymentController::class, 'processSubscription']);
         Route::get('/payment/subscription-status', [PaymentController::class, 'getSubscriptionStatus']);
     });
+    
+    // Subscription management routes
+    Route::get('/subscription/plans', [SubscriptionController::class, 'getPlans']);
+    Route::get('/subscription/history', [SubscriptionController::class, 'getSubscriptionHistory']);
+    Route::post('/subscription/cancel', [SubscriptionController::class, 'cancelSubscription']);
     Route::get('/payment/transactions', [PaymentController::class, 'getTransactionHistory']);
     
     // Freelancer payment routes

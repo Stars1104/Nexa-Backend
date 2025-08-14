@@ -47,6 +47,7 @@ class PaymentController extends Controller
             'has_card_holder_name' => $request->has('card_holder_name'),
             'has_card_expiration_date' => $request->has('card_expiration_date'),
             'has_cpf' => $request->has('cpf'),
+            'subscription_plan_id' => $request->has('subscription_plan_id'),
         ]);
 
         // Check if Pagar.me is configured
@@ -75,6 +76,7 @@ class PaymentController extends Controller
                 'card_expiration_date' => 'required|string|size:4', // MMYY format
                 'card_cvv' => 'required|string|min:3|max:4',
                 'cpf' => 'required|string|regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/', // CPF format validation
+                'subscription_plan_id' => 'required|integer|exists:subscription_plans,id',
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             Log::error('Subscription validation failed', [
@@ -110,21 +112,43 @@ class PaymentController extends Controller
                 
                 $user = auth()->user();
                 
+                // Get the selected subscription plan
+                $subscriptionPlan = \App\Models\SubscriptionPlan::find($request->subscription_plan_id);
+                if (!$subscriptionPlan) {
+                    throw new \Exception('Invalid subscription plan');
+                }
+                
+                // Calculate expiration date based on plan duration
+                $expiresAt = now()->addMonths($subscriptionPlan->duration_months);
+                
                 // Create a test transaction record
                 $transaction = Transaction::create([
                     'user_id' => $user->id,
-                    'amount' => 2999, // R$29.99 in cents
+                    'amount' => $subscriptionPlan->price * 100, // Convert to cents
                     'payment_method' => 'credit_card',
                     'status' => 'paid',
                     'pagarme_transaction_id' => 'test_' . time(),
                     'paid_at' => now(),
-                    'expires_at' => now()->addMonth(),
+                    'expires_at' => $expiresAt,
+                ]);
+
+                // Create subscription record
+                \App\Models\Subscription::create([
+                    'user_id' => $user->id,
+                    'subscription_plan_id' => $subscriptionPlan->id,
+                    'status' => \App\Models\Subscription::STATUS_ACTIVE,
+                    'starts_at' => now(),
+                    'expires_at' => $expiresAt,
+                    'amount_paid' => $subscriptionPlan->price,
+                    'payment_method' => 'credit_card',
+                    'transaction_id' => $transaction->id,
+                    'auto_renew' => false,
                 ]);
 
                 // Update user premium status
                 $user->update([
                     'has_premium' => true,
-                    'premium_expires_at' => now()->addMonth(),
+                    'premium_expires_at' => $expiresAt,
                 ]);
 
                 DB::commit();
@@ -207,6 +231,15 @@ class PaymentController extends Controller
                 ], 400);
             }
 
+            // Get the selected subscription plan
+            $subscriptionPlan = \App\Models\SubscriptionPlan::find($request->subscription_plan_id);
+            if (!$subscriptionPlan) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid subscription plan selected'
+                ], 400);
+            }
+
             // Prepare payment data for Pagar.me v5
             $paymentData = [
                 'code' => 'NEXA_PREMIUM_' . $user->id . '_' . time(),
@@ -231,10 +264,10 @@ class PaymentController extends Controller
                 ],
                 'items' => [
                     [
-                        'amount' => 2999, // Pagar.me expects amount in cents (R$ 29.99)
-                        'description' => 'Nexa Premium Subscription - 1 Month',
+                        'amount' => (int)($subscriptionPlan->price * 100), // Pagar.me expects amount in cents
+                        'description' => 'Nexa Premium Subscription - ' . $subscriptionPlan->name,
                         'quantity' => 1,
-                        'code' => 'NEXA_PREMIUM_MONTH'
+                        'code' => 'NEXA_PREMIUM_' . $subscriptionPlan->duration_months . 'M'
                     ]
                 ],
                 'payments' => [
@@ -338,19 +371,22 @@ class PaymentController extends Controller
                 ], 400);
             }
 
+            // Calculate expiration date based on plan duration
+            $expiresAt = now()->addMonths($subscriptionPlan->duration_months);
+            
             // Create transaction record
             $dbTransaction = Transaction::create([
                 'user_id' => $user->id,
                 'pagarme_transaction_id' => $charge['id'],
                 'status' => $charge['status'],
-                'amount' => 29.99, // Store as decimal, not cents
+                'amount' => $subscriptionPlan->price, // Store as decimal, not cents
                 'payment_method' => 'credit_card',
                 'card_brand' => $charge['payment_method_details']['card']['brand'] ?? null,
                 'card_last4' => $charge['payment_method_details']['card']['last_four_digits'] ?? null,
                 'card_holder_name' => $request->card_holder_name,
                 'payment_data' => $charge,
                 'paid_at' => $charge['status'] === 'paid' ? now() : null,
-                'expires_at' => $charge['status'] === 'paid' ? now()->addMonth() : null,
+                'expires_at' => $charge['status'] === 'paid' ? $expiresAt : null,
             ]);
 
             // Update user premium status if payment is successful
@@ -361,16 +397,30 @@ class PaymentController extends Controller
                     'charge_status' => $charge['status'],
                 ]);
                 
+                // Create subscription record
+                \App\Models\Subscription::create([
+                    'user_id' => $user->id,
+                    'subscription_plan_id' => $subscriptionPlan->id,
+                    'status' => \App\Models\Subscription::STATUS_ACTIVE,
+                    'starts_at' => now(),
+                    'expires_at' => $expiresAt,
+                    'amount_paid' => $subscriptionPlan->price,
+                    'payment_method' => 'credit_card',
+                    'transaction_id' => $dbTransaction->id,
+                    'auto_renew' => false,
+                ]);
+                
                 $user->update([
                     'has_premium' => true,
-                    'premium_expires_at' => now()->addMonth(),
+                    'premium_expires_at' => $expiresAt,
                 ]);
 
                 // Notify admin about successful payment
                 NotificationService::notifyAdminOfPaymentActivity($user, 'premium_subscription_paid', [
                     'transaction_id' => $dbTransaction->id,
-                    'amount' => 'R$ 29,99',
+                    'amount' => 'R$ ' . number_format($subscriptionPlan->price, 2, ',', '.'),
                     'user_name' => $user->name,
+                    'plan_name' => $subscriptionPlan->name,
                 ]);
             }
 
