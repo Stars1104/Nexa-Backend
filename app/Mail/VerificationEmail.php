@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\User;
+use App\Services\EmailVerificationService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
@@ -41,8 +42,11 @@ class VerificationEmail extends Mailable
      */
     public function content(): Content
     {
+        // Use our working EmailVerificationService instead of the broken Blade template
+        $result = EmailVerificationService::testTemplate($this->user);
+        
         return new Content(
-            view: 'emails.verification',
+            htmlString: $result['html'],
             with: [
                 'user' => $this->user,
                 'verificationUrl' => $this->verificationUrl,

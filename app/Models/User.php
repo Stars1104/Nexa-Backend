@@ -89,7 +89,12 @@ class User extends Authenticatable implements MustVerifyEmail
     public function sendEmailVerificationNotification()
     {
         // Use our intelligent email service with fallbacks
-        return \App\Services\EmailVerificationService::sendVerificationEmail($this);
+        $result = \App\Services\EmailVerificationService::sendVerificationEmail($this);
+        
+        // Log the result for debugging
+        \Illuminate\Support\Facades\Log::info('Email verification result for user ' . $this->email . ': ' . json_encode($result));
+        
+        return $result['success'];
     }
 
     public function campaigns(): HasMany

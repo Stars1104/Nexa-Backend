@@ -22,13 +22,21 @@
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
         .header {
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             padding: 40px 30px;
             text-align: center;
         }
         .logo {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 20px;
+            display: block;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        .brand-name {
             color: white;
-            font-size: 32px;
+            font-size: 28px;
             font-weight: bold;
             margin: 0;
             text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -53,7 +61,7 @@
             margin: 40px 0;
         }
         .verify-button {
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            background: #e91e63;
             color: white;
             padding: 16px 32px;
             text-decoration: none;
@@ -61,19 +69,20 @@
             font-weight: 600;
             font-size: 16px;
             display: inline-block;
-            box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.3);
+            box-shadow: 0 4px 6px -1px rgba(233, 30, 99, 0.3);
             transition: all 0.2s ease;
         }
         .verify-button:hover {
             transform: translateY(-1px);
-            box-shadow: 0 6px 8px -1px rgba(99, 102, 241, 0.4);
+            box-shadow: 0 6px 8px -1px rgba(233, 30, 99, 0.4);
         }
         .info {
-            background-color: #f1f5f9;
-            border-left: 4px solid #6366f1;
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border-left: 4px solid #e91e63;
             padding: 20px;
             margin: 30px 0;
             border-radius: 0 8px 8px 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
         }
         .info-title {
             font-weight: 600;
@@ -121,15 +130,16 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1 class="logo">Nexa</h1>
+            <img src="{{ asset('assets/light-logo.png') }}" alt="Nexa Logo" class="logo">
+            <h1 class="brand-name">Nexa</h1>
         </div>
         
         <div class="content">
             <h2 class="greeting">Hello {{ $user->name }}!</h2>
             
             <p class="message">
-                Thank you for registering with Nexa! We're excited to have you join our platform. 
-                To complete your registration and start using Nexa, please verify your email address.
+                Welcome to Nexa! 🎉 We're thrilled to have you join our vibrant community of creators and brands. 
+                To unlock all the amazing features and start your journey, please verify your email address below.
             </p>
             
             <div class="button-container">
@@ -139,13 +149,13 @@
             </div>
             
             <div class="info">
-                <h3 class="info-title">What happens next?</h3>
+                <h3 class="info-title">🚀 What happens next?</h3>
                 <p class="info-text">
                     After verifying your email, you'll have full access to the Nexa platform where you can:
-                    • Connect with brands and creators
-                    • Discover exciting campaigns
-                    • Build your professional network
-                    • Access exclusive opportunities
+                    <br>• Connect with amazing brands and talented creators
+                    <br>• Discover exciting campaigns and opportunities
+                    <br>• Build your professional network and portfolio
+                    <br>• Access exclusive features and premium content
                 </p>
             </div>
             
@@ -157,12 +167,15 @@
         
         <div class="footer">
             <p class="footer-text">
-                <strong>Important:</strong> This verification link will expire in 
-                <span class="expiry">60 minutes</span> for security reasons.
+                <strong>🔒 Security Note:</strong> This verification link will expire in 
+                <span class="expiry">60 minutes</span> for your protection.
+            </p>
+            <p class="footer-text">
+                <strong>Need help?</strong> Contact our support team at support@nexa.com
             </p>
             <p class="footer-text">
                 Best regards,<br>
-                <strong>The Nexa Team</strong>
+                <strong>The Nexa Team</strong> 💜
             </p>
         </div>
     </div>
