@@ -12,6 +12,11 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // Create subscription plans first
+        $this->call([
+            SubscriptionPlanSeeder::class,
+        ]);
+
         // Create various types of users for testing
         \App\Models\User::factory(10)->create();
 

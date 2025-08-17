@@ -799,6 +799,7 @@ class PaymentController extends Controller
         $request->validate([
             'card_hash' => 'required|string',
             'user_id' => 'required|integer|exists:users,id',
+            'subscription_plan_id' => 'required|integer|exists:subscription_plans,id',
         ]);
 
         $user = User::find($request->user_id);
@@ -807,7 +808,13 @@ class PaymentController extends Controller
             return response()->json(['error' => 'Invalid user or missing recipient_id'], 400);
         }
 
-        $amount = 3990; // R$39.90 in cents (updated pricing)
+        // Get the subscription plan to determine the amount
+        $subscriptionPlan = \App\Models\SubscriptionPlan::find($request->subscription_plan_id);
+        if (!$subscriptionPlan) {
+            return response()->json(['error' => 'Invalid subscription plan'], 400);
+        }
+
+        $amount = (int)($subscriptionPlan->price * 100); // Convert to cents
 
         try {
             $response = Http::withBasicAuth($apiKey, '')
@@ -847,7 +854,7 @@ class PaymentController extends Controller
                     'items' => [
                         [
                             'id' => '1',
-                            'title' => 'Monthly Subscription',
+                            'title' => $subscriptionPlan->name,
                             'unit_price' => $amount,
                             'quantity' => 1,
                             'tangible' => false,
@@ -881,13 +888,13 @@ class PaymentController extends Controller
                     'status' => 'paid',
                     'pagarme_transaction_id' => $responseData['id'],
                     'paid_at' => now(),
-                    'expires_at' => now()->addMonth(),
+                    'expires_at' => now()->addMonths($subscriptionPlan->duration_months),
                 ]);
 
                 // Update user premium status
                 $user->update([
                     'has_premium' => true,
-                    'premium_expires_at' => now()->addMonth(),
+                    'premium_expires_at' => now()->addMonths($subscriptionPlan->duration_months),
                 ]);
 
                 Log::info('Subscription payment successful', [
