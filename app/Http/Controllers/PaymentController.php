@@ -784,6 +784,8 @@ class PaymentController extends Controller
 
     /**
      * Legacy subscription payment method using card hash
+     * NOTE: This method is deprecated and uses hardcoded pricing.
+     * New subscriptions should use the SubscriptionController with dynamic plan pricing.
      */
     public function paySubscription(Request $request): JsonResponse
     {
@@ -805,7 +807,7 @@ class PaymentController extends Controller
             return response()->json(['error' => 'Invalid user or missing recipient_id'], 400);
         }
 
-        $amount = 2999; // R$29.99 in cents
+        $amount = 3990; // R$39.90 in cents (updated pricing)
 
         try {
             $response = Http::withBasicAuth($apiKey, '')
@@ -1365,6 +1367,8 @@ class PaymentController extends Controller
             $withdrawal = Withdrawal::create([
                 'creator_id' => $user->id,
                 'amount' => $request->amount,
+                'platform_fee' => 5.00, // 5% platform fee
+                'fixed_fee' => 5.00, // R$5 fixed platform fee
                 'withdrawal_method' => $request->method,
                 'status' => 'pending',
                 'bank_account_id' => $bankAccountId,

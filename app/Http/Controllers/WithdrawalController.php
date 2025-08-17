@@ -136,6 +136,8 @@ class WithdrawalController extends Controller
             $withdrawal = Withdrawal::create([
                 'creator_id' => $user->id,
                 'amount' => $request->amount,
+                'platform_fee' => 5.00, // 5% platform fee
+                'fixed_fee' => 5.00, // R$5 fixed platform fee
                 'withdrawal_method' => $request->withdrawal_method,
                 'withdrawal_details' => $request->withdrawal_details ?? [],
                 'status' => 'pending',
@@ -224,6 +226,11 @@ class WithdrawalController extends Controller
                 return [
                     'id' => $withdrawal->id,
                     'amount' => $withdrawal->formatted_amount,
+                    'platform_fee' => $withdrawal->formatted_platform_fee_amount,
+                    'fixed_fee' => $withdrawal->formatted_fixed_fee,
+                    'percentage_fee' => $withdrawal->formatted_percentage_fee_amount,
+                    'total_fees' => $withdrawal->formatted_total_fees,
+                    'net_amount' => $withdrawal->formatted_net_amount,
                     'method' => $withdrawal->withdrawal_method_label,
                     'status' => $withdrawal->status,
                     'status_color' => $withdrawal->status_color,
@@ -288,6 +295,11 @@ class WithdrawalController extends Controller
                 'data' => [
                     'id' => $withdrawal->id,
                     'amount' => $withdrawal->formatted_amount,
+                    'platform_fee' => $withdrawal->formatted_platform_fee_amount,
+                    'fixed_fee' => $withdrawal->formatted_fixed_fee,
+                    'percentage_fee' => $withdrawal->formatted_percentage_fee_amount,
+                    'total_fees' => $withdrawal->formatted_total_fees,
+                    'net_amount' => $withdrawal->formatted_net_amount,
                     'method' => $withdrawal->withdrawal_method_label,
                     'status' => $withdrawal->status,
                     'status_color' => $withdrawal->status_color,

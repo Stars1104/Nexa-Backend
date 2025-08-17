@@ -11,9 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('steps', function (Blueprint $table) {
-            $table->string('video_mime')->nullable()->after('video_path');
-            $table->integer('order')->default(0)->after('video_mime');
+        Schema::table('users', function (Blueprint $table) {
+            //
         });
     }
 
@@ -22,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('steps', function (Blueprint $table) {
-            $table->dropColumn(['video_mime', 'order']);
+        Schema::table('users', function (Blueprint $table) {
+            //
         });
     }
 };

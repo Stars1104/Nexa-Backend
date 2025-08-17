@@ -14,6 +14,8 @@ class Withdrawal extends Model
     protected $fillable = [
         'creator_id',
         'amount',
+        'platform_fee',
+        'fixed_fee',
         'withdrawal_method',
         'withdrawal_details',
         'status',
@@ -24,6 +26,8 @@ class Withdrawal extends Model
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'platform_fee' => 'decimal:2',
+        'fixed_fee' => 'decimal:2',
         'withdrawal_details' => 'array',
         'processed_at' => 'datetime',
     ];
@@ -260,6 +264,98 @@ class Withdrawal extends Model
     public function getFormattedAmountAttribute(): string
     {
         return 'R$ ' . number_format($this->amount, 2, ',', '.');
+    }
+
+    /**
+     * Calculate the percentage fee based on withdrawal method
+     */
+    public function getPercentageFeeAttribute(): float
+    {
+        $withdrawalMethod = WithdrawalMethod::findByCode($this->withdrawal_method);
+        if (!$withdrawalMethod) {
+            return 0;
+        }
+        return (float) $withdrawalMethod->fee;
+    }
+
+    /**
+     * Calculate the percentage fee amount
+     */
+    public function getPercentageFeeAmountAttribute(): float
+    {
+        return ($this->amount * $this->percentage_fee) / 100;
+    }
+
+    /**
+     * Calculate the platform fee amount (5% of withdrawal amount)
+     */
+    public function getPlatformFeeAmountAttribute(): float
+    {
+        return ($this->amount * $this->platform_fee) / 100;
+    }
+
+    /**
+     * Calculate the total fees (percentage + platform fee + fixed fee)
+     */
+    public function getTotalFeesAttribute(): float
+    {
+        return $this->percentage_fee_amount + $this->platform_fee_amount + $this->fixed_fee;
+    }
+
+    /**
+     * Calculate the net amount after all fees
+     */
+    public function getNetAmountAttribute(): float
+    {
+        return $this->amount - $this->total_fees;
+    }
+
+    /**
+     * Get formatted platform fee percentage
+     */
+    public function getFormattedPlatformFeeAttribute(): string
+    {
+        return number_format($this->platform_fee, 2) . '%';
+    }
+
+    /**
+     * Get formatted platform fee amount
+     */
+    public function getFormattedPlatformFeeAmountAttribute(): string
+    {
+        return 'R$ ' . number_format($this->platform_fee_amount, 2, ',', '.');
+    }
+
+    /**
+     * Get formatted fixed fee amount
+     */
+    public function getFormattedFixedFeeAttribute(): string
+    {
+        return 'R$ ' . number_format($this->fixed_fee, 2, ',', '.');
+    }
+
+    /**
+     * Get formatted percentage fee amount
+     */
+    public function getFormattedPercentageFeeAmountAttribute(): string
+    {
+        return 'R$ ' . number_format($this->percentage_fee_amount, 2, ',', '.');
+    }
+
+    /**
+     * Get formatted total fees
+     */
+    public function getFormattedTotalFeesAttribute(): string
+    {
+        return 'R$ ' . number_format($this->total_fees, 2, ',', '.');
+    }
+
+    /**
+     * Get formatted net amount
+     */
+    public function getFormattedNetAmountAttribute(): string
+    {
+        return 'R$ ' . number_format($this->net_amount, 2, ',', '.');
     }
 
     public function getStatusColorAttribute(): string

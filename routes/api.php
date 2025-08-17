@@ -40,7 +40,7 @@ Route::get('/health', function () {
     ]);
 });
 
-// Include auth routes
+// Include auth routes FIRST to ensure they take priority
 require __DIR__.'/auth.php';
 
 // File download route with CORS headers
@@ -65,16 +65,14 @@ Route::get('/download/{path}', function ($path) {
     ]);
 })->where('path', '.*');
 
-
-Route::middleware(['auth:sanctum', 'throttle:user-status'])->get('/user', function (Request $request) {
-    return $request->user();
-});
-
 // Public guide routes (read-only, no authentication required)
 Route::get('/guides', [GuideController::class, 'index']);                 // Get all guides
 Route::get('/guides/{guide}', [GuideController::class, 'show']);          // Get a single guide by ID
 
-
+// User status check (requires authentication)
+Route::middleware(['auth:sanctum', 'throttle:user-status'])->get('/user', function (Request $request) {
+    return $request->user();
+});
 
 // Authenticated user routes
 Route::middleware(['auth:sanctum'])->group(function () {
@@ -83,7 +81,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('profile')->group(function () {
         Route::get('/', [ProfileController::class, 'show']); // Get current user profile
         Route::put('/', [ProfileController::class, 'update']); // Update current user profile
-
     });
     
     // Brand Profile management
@@ -101,8 +98,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/get-campaigns', [CampaignController::class, 'getCampaigns']); // Get campaigns with advanced filtering
         Route::get('/get-all-campaigns', [CampaignController::class, 'getAllCampaigns']); // Get all campaigns without pagination
         Route::get('/pending', [CampaignController::class, 'getPendingCampaigns']); // Get pending campaigns
-        Route::get('/user/{user}', [CampaignController::class, 'getUserCampaigns']); // Get campaigns by user
-        Route::get('/status/{status}', [CampaignController::class, 'getCampaignsByStatus']); // Get campaigns by status
+        Route::get('/user/{user}', [CampaignController::class, 'getUserCampaigns'])->where('user', '[0-9]+'); // Get campaigns by user
+        Route::get('/status/{status}', [CampaignController::class, 'getCampaignsByStatus'])->where('status', '[a-zA-Z]+'); // Get campaigns by status
         Route::post('/', [CampaignController::class, 'store']); // Create campaign (Brand only)
         Route::get('/statistics', [CampaignController::class, 'statistics']); // Get statistics
         Route::get('/favorites', [CampaignController::class, 'getFavorites']); // Get favorite campaigns (Creator only)
@@ -114,50 +111,50 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::patch('/{campaign}/toggle-featured', [CampaignController::class, 'toggleFeatured']); // Toggle featured status (Admin only)
         Route::post('/{campaign}/toggle-active', [CampaignController::class, 'toggleActive']); // Toggle active status (Brand only)
         Route::post('/{campaign}/toggle-favorite', [CampaignController::class, 'toggleFavorite']); // Toggle favorite status (Creator only)
-        Route::get('/{campaign}/bids', [BidController::class, 'campaignBids']); // Get bids for campaign
+        Route::get('/{campaign}/bids', [BidController::class, 'campaignBids'])->where('campaign', '[0-9]+'); // Get bids for campaign
         
         // Generic campaign routes (must come after specific routes)
-        Route::get('/{campaign}', [CampaignController::class, 'show']); // View campaign
-        Route::put('/{campaign}', [CampaignController::class, 'update']); // Update campaign (Brand only)
-        Route::delete('/{campaign}', [CampaignController::class, 'destroy']); // Delete campaign (Brand only)
+        Route::get('/{campaign}', [CampaignController::class, 'show'])->where('campaign', '[0-9]+'); // View campaign
+        Route::put('/{campaign}', [CampaignController::class, 'update'])->where('campaign', '[0-9]+'); // Update campaign (Brand only)
+        Route::delete('/{campaign}', [CampaignController::class, 'destroy'])->where('campaign', '[0-9]+'); // Delete campaign (Brand only)
     });
     
     // Bid CRUD operations (require premium for creators)
     Route::prefix('bids')->middleware(['premium.access'])->group(function () {
         Route::get('/', [BidController::class, 'index']); // List bids
-        Route::get('/{bid}', [BidController::class, 'show']); // View bid
-        Route::put('/{bid}', [BidController::class, 'update']); // Update bid (Creator only)
-        Route::delete('/{bid}', [BidController::class, 'destroy']); // Delete bid (Creator only)
+        Route::get('/{bid}', [BidController::class, 'show'])->where('bid', '[0-9]+'); // View bid
+        Route::put('/{bid}', [BidController::class, 'update'])->where('bid', '[0-9]+'); // Update bid (Creator only)
+        Route::delete('/{bid}', [BidController::class, 'destroy'])->where('bid', '[0-9]+'); // Delete bid (Creator only)
         
         // Brand operations
-        Route::post('/{bid}/accept', [BidController::class, 'accept']); // Accept bid (Brand only)
-        Route::post('/{bid}/reject', [BidController::class, 'reject']); // Reject bid (Brand only)
+        Route::post('/{bid}/accept', [BidController::class, 'accept'])->where('bid', '[0-9]+'); // Accept bid (Brand only)
+        Route::post('/{bid}/reject', [BidController::class, 'reject'])->where('bid', '[0-9]+'); // Reject bid (Brand only)
         
         // Creator operations
-        Route::post('/{bid}/withdraw', [BidController::class, 'withdraw']); // Withdraw bid (Creator only)
+        Route::post('/{bid}/withdraw', [BidController::class, 'withdraw'])->where('bid', '[0-9]+'); // Withdraw bid (Creator only)
     });
     
     // Create bid on campaign (require premium for creators)
-    Route::post('/campaigns/{campaign}/bids', [BidController::class, 'store'])->middleware(['premium.access']); // Create bid on campaign (Creator only)
+    Route::post('/campaigns/{campaign}/bids', [BidController::class, 'store'])->middleware(['premium.access'])->where('campaign', '[0-9]+'); // Create bid on campaign (Creator only)
     
     // Campaign Application CRUD operations (require premium for creators)
     Route::prefix('applications')->middleware(['premium.access'])->group(function () {
         Route::get('/', [CampaignApplicationController::class, 'index']); // List applications (role-based)
         Route::get('/statistics', [CampaignApplicationController::class, 'statistics']); // Get application statistics
-        Route::get('/{application}', [CampaignApplicationController::class, 'show']); // View application
-        Route::post('/{application}/approve', [CampaignApplicationController::class, 'approve']); // Approve application (Brand only)
-        Route::post('/{application}/reject', [CampaignApplicationController::class, 'reject']); // Reject application (Brand only)
-        Route::delete('/{application}/withdraw', [CampaignApplicationController::class, 'withdraw']); // Withdraw application (Creator only)
+        Route::get('/{application}', [CampaignApplicationController::class, 'show'])->where('application', '[0-9]+'); // View application
+        Route::post('/{application}/approve', [CampaignApplicationController::class, 'approve'])->where('application', '[0-9]+'); // Approve application (Brand only)
+        Route::post('/{application}/reject', [CampaignApplicationController::class, 'reject'])->where('application', '[0-9]+'); // Reject application (Brand only)
+        Route::delete('/{application}/withdraw', [CampaignApplicationController::class, 'withdraw'])->where('application', '[0-9]+'); // Withdraw application (Creator only)
     });
     
     // Create application on campaign (require premium for creators)
-    Route::post('/campaigns/{campaign}/applications', [CampaignApplicationController::class, 'store'])->middleware(['premium.access']); // Create application (Creator only)
+    Route::post('/campaigns/{campaign}/applications', [CampaignApplicationController::class, 'store'])->middleware(['premium.access'])->where('campaign', '[0-9]+'); // Create application (Creator only)
     
     // Get applications for a specific campaign (require premium for creators)
-    Route::get('/campaigns/{campaign}/applications', [CampaignApplicationController::class, 'campaignApplications'])->middleware(['premium.access']); // Get campaign applications
+    Route::get('/campaigns/{campaign}/applications', [CampaignApplicationController::class, 'campaignApplications'])->middleware(['premium.access'])->where('campaign', '[0-9]+'); // Get campaign applications
     
-    // Chat room management (require premium for creators)
-    Route::prefix('chat')->middleware(['premium.access'])->group(function () {
+    // Chat room management (available to all authenticated users)
+    Route::prefix('chat')->group(function () {
         Route::get('/rooms', [ChatController::class, 'getChatRooms']); // Get user's chat rooms
         Route::get('/rooms/{roomId}/messages', [ChatController::class, 'getMessages']); // Get messages for a room
         Route::post('/rooms', [ChatController::class, 'createChatRoom']); // Create chat room (brand accepts proposal)
@@ -170,9 +167,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Connection management (require premium for creators)
     Route::prefix('connections')->middleware(['premium.access'])->group(function () {
         Route::post('/send-request', [ConnectionController::class, 'sendConnectionRequest']); // Send connection request
-        Route::post('/{requestId}/accept', [ConnectionController::class, 'acceptConnectionRequest']); // Accept connection request
-        Route::post('/{requestId}/reject', [ConnectionController::class, 'rejectConnectionRequest']); // Reject connection request
-        Route::post('/{requestId}/cancel', [ConnectionController::class, 'cancelConnectionRequest']); // Cancel connection request
+        Route::post('/{requestId}/accept', [ConnectionController::class, 'acceptConnectionRequest'])->where('requestId', '[0-9]+'); // Accept connection request
+        Route::post('/{requestId}/reject', [ConnectionController::class, 'rejectConnectionRequest'])->where('requestId', '[0-9]+'); // Reject connection request
+        Route::post('/{requestId}/cancel', [ConnectionController::class, 'cancelConnectionRequest'])->where('requestId', '[0-9]+'); // Cancel connection request
         Route::get('/requests', [ConnectionController::class, 'getConnectionRequests']); // Get connection requests
         Route::get('/search-creators', [ConnectionController::class, 'searchCreators']); // Search for creators (brands only)
     });
@@ -209,7 +206,7 @@ Route::middleware(['auth:sanctum', 'premium.access'])->group(function () {
 
 // Creator profile for brands (public view)
 Route::middleware(['auth:sanctum'])->group(function () {
-    Route::get('/creators/{creatorId}/profile', [PortfolioController::class, 'getCreatorProfile']);
+    Route::get('/creators/{creatorId}/profile', [PortfolioController::class, 'getCreatorProfile'])->where('creatorId', '[0-9]+');
 });
 
 // Payment routes
@@ -269,23 +266,23 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('offers')->group(function () {
         Route::post('/', [OfferController::class, 'store']); // Create offer
         Route::get('/', [OfferController::class, 'index']); // Get offers
-        Route::get('/{id}', [OfferController::class, 'show']); // Get specific offer
-        Route::post('/{id}/accept', [OfferController::class, 'accept']); // Accept offer
-        Route::post('/{id}/reject', [OfferController::class, 'reject']); // Reject offer
-        Route::delete('/{id}', [OfferController::class, 'cancel']); // Cancel offer
+        Route::get('/{id}', [OfferController::class, 'show'])->where('id', '[0-9]+'); // Get specific offer
+        Route::post('/{id}/accept', [OfferController::class, 'accept'])->where('id', '[0-9]+'); // Accept offer
+        Route::post('/{id}/reject', [OfferController::class, 'reject'])->where('id', '[0-9]+'); // Reject offer
+        Route::delete('/{id}', [OfferController::class, 'cancel'])->where('id', '[0-9]+'); // Cancel offer
         Route::get('/chat-room/{roomId}', [OfferController::class, 'getOffersForChatRoom']); // Get offers for chat room
     });
     
     // Contract routes
     Route::prefix('contracts')->group(function () {
         Route::get('/', [ContractController::class, 'index']); // Get contracts
-        Route::get('/{id}', [ContractController::class, 'show']); // Get specific contract
+        Route::get('/{id}', [ContractController::class, 'show'])->where('id', '[0-9]+'); // Get specific contract
         Route::get('/chat-room/{roomId}', [ContractController::class, 'getContractsForChatRoom']); // Get contracts for chat room
-        Route::post('/{id}/activate', [ContractController::class, 'activate']); // Activate contract
-        Route::post('/{id}/complete', [ContractController::class, 'complete']); // Complete contract
-        Route::post('/{id}/cancel', [ContractController::class, 'cancel']); // Cancel contract
-        Route::post('/{id}/terminate', [ContractController::class, 'terminate']); // Terminate contract (brand only)
-        Route::post('/{id}/dispute', [ContractController::class, 'dispute']); // Dispute contract
+        Route::post('/{id}/activate', [ContractController::class, 'activate'])->where('id', '[0-9]+'); // Activate contract
+        Route::post('/{id}/complete', [ContractController::class, 'complete'])->where('id', '[0-9]+'); // Complete contract
+        Route::post('/{id}/cancel', [ContractController::class, 'cancel'])->where('id', '[0-9]+'); // Cancel contract
+        Route::post('/{id}/terminate', [ContractController::class, 'terminate'])->where('id', '[0-9]+'); // Terminate contract (brand only)
+        Route::post('/{id}/dispute', [ContractController::class, 'dispute'])->where('id', '[0-9]+'); // Dispute contract
     });
     
     // Campaign Timeline routes
@@ -306,10 +303,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/reviews', [ReviewController::class, 'store']);
         Route::get('/reviews', [ReviewController::class, 'index']);
-        Route::get('/reviews/{id}', [ReviewController::class, 'show']);
-        Route::put('/reviews/{id}', [ReviewController::class, 'update']);
-        Route::delete('/reviews/{id}', [ReviewController::class, 'destroy']);
-        Route::get('/contracts/{contractId}/review-status', [ReviewController::class, 'getContractReviewStatus']);
+        Route::get('/reviews/{id}', [ReviewController::class, 'show'])->where('id', '[0-9]+');
+        Route::put('/reviews/{id}', [ReviewController::class, 'update'])->where('id', '[0-9]+');
+        Route::delete('/reviews/{id}', [ReviewController::class, 'destroy'])->where('id', '[0-9]+');
+        Route::get('/contracts/{contractId}/review-status', [ReviewController::class, 'getContractReviewStatus'])->where('contractId', '[0-9]+');
     });
     
     // Creator balance routes
@@ -324,8 +321,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('withdrawals')->group(function () {
         Route::post('/', [WithdrawalController::class, 'store']); // Create withdrawal
         Route::get('/', [WithdrawalController::class, 'index']); // Get withdrawals
-        Route::get('/{id}', [WithdrawalController::class, 'show']); // Get specific withdrawal
-        Route::delete('/{id}', [WithdrawalController::class, 'cancel']); // Cancel withdrawal
+        Route::get('/{id}', [WithdrawalController::class, 'show'])->where('id', '[0-9]+'); // Get specific withdrawal
+        Route::delete('/{id}', [WithdrawalController::class, 'cancel'])->where('id', '[0-9]+'); // Cancel withdrawal
         Route::get('/statistics', [WithdrawalController::class, 'statistics']); // Get withdrawal statistics
     });
     
@@ -350,34 +347,34 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     
     // Campaign management
     Route::get('/campaigns', [AdminController::class, 'getCampaigns']);
-    Route::get('/campaigns/{id}', [AdminController::class, 'getCampaign']);
-    Route::patch('/campaigns/{id}/approve', [AdminController::class, 'approveCampaign']);
-    Route::patch('/campaigns/{id}/reject', [AdminController::class, 'rejectCampaign']);
-    Route::delete('/campaigns/{id}', [AdminController::class, 'deleteCampaign']);
+    Route::get('/campaigns/{id}', [AdminController::class, 'getCampaign'])->where('id', '[0-9]+');
+    Route::patch('/campaigns/{id}/approve', [AdminController::class, 'approveCampaign'])->where('id', '[0-9]+');
+    Route::patch('/campaigns/{id}/reject', [AdminController::class, 'rejectCampaign'])->where('id', '[0-9]+');
+    Route::delete('/campaigns/{id}', [AdminController::class, 'deleteCampaign'])->where('id', '[0-9]+');
     
     // User management
     Route::get('/users', [AdminController::class, 'getUsers']);
     Route::get('/users/creators', [AdminController::class, 'getCreators']);
     Route::get('/users/brands', [AdminController::class, 'getBrands']);
     Route::get('/users/statistics', [AdminController::class, 'getUserStatistics']);
-    Route::patch('/users/{user}/status', [AdminController::class, 'updateUserStatus']);
+    Route::patch('/users/{user}/status', [AdminController::class, 'updateUserStatus'])->where('user', '[0-9]+');
     
     // Withdrawal methods management
     Route::apiResource('withdrawal-methods', \App\Http\Controllers\Admin\WithdrawalMethodController::class);
-    Route::put('/withdrawal-methods/{id}/toggle-active', [\App\Http\Controllers\Admin\WithdrawalMethodController::class, 'toggleActive']);
+    Route::put('/withdrawal-methods/{id}/toggle-active', [\App\Http\Controllers\Admin\WithdrawalMethodController::class, 'toggleActive'])->where('id', '[0-9]+');
     
     // Payout management
     Route::get('/payouts/pending', [AdminPayoutController::class, 'getPendingWithdrawals']);
-    Route::post('/payouts/{id}/process', [AdminPayoutController::class, 'processWithdrawal']);
+    Route::post('/payouts/{id}/process', [AdminPayoutController::class, 'processWithdrawal'])->where('id', '[0-9]+');
     Route::get('/payouts/verification-report', [AdminPayoutController::class, 'getWithdrawalVerificationReport']);
-    Route::get('/payouts/{id}/verify', [AdminPayoutController::class, 'verifyWithdrawal']);
+    Route::get('/payouts/{id}/verify', [AdminPayoutController::class, 'verifyWithdrawal'])->where('id', '[0-9]+');
 
     // Guide Management
     Route::get('/guides', [GuideController::class, 'index']);                 // Get all guides
     Route::post('/guides', [GuideController::class, 'store']);                // Create a new guide
-    Route::get('/guides/{guide}', [GuideController::class, 'show']);          // Get a single guide by ID (route model binding)
-    Route::put('/guides/{guide}', [GuideController::class, 'update']);        // Update a guide by ID
-    Route::delete('/guides/{guide}', [GuideController::class, 'destroy']);    // Delete a guide by ID
+    Route::get('/guides/{guide}', [GuideController::class, 'show'])->where('guide', '[0-9]+');          // Get a single guide by ID (route model binding)
+    Route::put('/guides/{guide}', [GuideController::class, 'update'])->where('guide', '[0-9]+');        // Update a guide by ID
+    Route::delete('/guides/{guide}', [GuideController::class, 'destroy'])->where('guide', '[0-9]+');    // Delete a guide by ID
     
     // Brand Rankings
     Route::get('/brand-rankings', [BrandRankingController::class, 'getBrandRankings']);
@@ -400,5 +397,4 @@ Route::post('/google/auth', [GoogleController::class, 'handleGoogleWithRole'])
 
 
 
-// Auth routes
-require __DIR__.'/auth.php';
+// Auth routes already included at the top

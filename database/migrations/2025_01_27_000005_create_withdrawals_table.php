@@ -15,6 +15,8 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('creator_id');
             $table->decimal('amount', 10, 2);
+            $table->decimal('platform_fee', 5, 2)->default(5.00)->comment('Platform fee percentage (e.g., 5.00 for 5%)');
+            $table->decimal('fixed_fee', 10, 2)->default(5.00)->comment('Fixed platform fee amount (e.g., 5.00 for R$5)');
             $table->string('withdrawal_method'); // bank_transfer, pagarme_account, etc.
             $table->json('withdrawal_details'); // Bank account details, etc.
             $table->enum('status', ['pending', 'processing', 'completed', 'failed', 'cancelled'])->default('pending');

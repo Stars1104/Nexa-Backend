@@ -40,36 +40,47 @@ class PremiumAccessMiddleware
         // Only apply to creators
         if (!$user->isCreator()) {
             Log::info('PremiumAccessMiddleware: User is not a creator, allowing access', [
-                'role' => $user->role
+                'role' => $user->role,
+                'path' => $request->path()
             ]);
             return $next($request);
         }
 
-        // Allow access to profile, portfolio, payment, and notification pages
-        $allowedPaths = [
-            '/api/profile',
-            '/api/portfolio',
-            '/api/payment',
-            '/api/notifications',
-            '/api/logout',
-        ];
-
+        // For creators, check if they have premium access for restricted features
+        // But allow access to basic chat functionality even without premium
+        
+        // Get the current path
         $currentPath = $request->path();
         
-        // Check if current path is allowed
-        foreach ($allowedPaths as $allowedPath) {
-            if (str_starts_with($currentPath, ltrim($allowedPath, '/'))) {
-                Log::info('PremiumAccessMiddleware: Path is in allowed list', [
-                    'path' => $currentPath,
-                    'allowedPath' => $allowedPath
-                ]);
-                return $next($request);
+        // Define paths that require premium for creators
+        $premiumRequiredPaths = [
+            'api/campaigns', // Campaign applications
+            'api/connections', // Connection requests
+            'api/direct-chat', // Direct messaging
+            'api/portfolio', // Portfolio management
+        ];
+        
+        // Check if current path requires premium
+        $requiresPremium = false;
+        foreach ($premiumRequiredPaths as $premiumPath) {
+            if (str_starts_with($currentPath, $premiumPath)) {
+                $requiresPremium = true;
+                break;
             }
         }
-
-        // Check if user has premium access
+        
+        // If path doesn't require premium, allow access
+        if (!$requiresPremium) {
+            Log::info('PremiumAccessMiddleware: Path does not require premium, allowing access', [
+                'path' => $currentPath,
+                'userId' => $user->id
+            ]);
+            return $next($request);
+        }
+        
+        // Check if user has premium access for premium-required features
         if (!$user->hasPremiumAccess()) {
-            Log::warning('PremiumAccessMiddleware: Creator without premium access blocked', [
+            Log::warning('PremiumAccessMiddleware: Creator without premium access blocked from premium feature', [
                 'userId' => $user->id,
                 'path' => $currentPath,
                 'hasPremium' => $user->has_premium,
@@ -79,7 +90,7 @@ class PremiumAccessMiddleware
             
             return response()->json([
                 'success' => false,
-                'message' => 'Premium subscription required',
+                'message' => 'Premium subscription required for this feature',
                 'error' => 'premium_required',
                 'redirect_to' => '/subscription',
                 'user' => [

@@ -21,6 +21,15 @@ class ChatController extends Controller
     public function getChatRooms(): JsonResponse
     {
         $user = Auth::user();
+        
+        \Log::info('Getting chat rooms', [
+            'user_id' => $user->id,
+            'user_role' => $user->role,
+            'is_brand' => $user->isBrand(),
+            'is_creator' => $user->isCreator(),
+            'is_admin' => $user->isAdmin(),
+        ]);
+        
         $chatRooms = collect();
 
         if ($user->isBrand()) {
@@ -28,16 +37,34 @@ class ChatController extends Controller
                 ->with(['creator', 'campaign', 'lastMessage.sender'])
                 ->orderBy('last_message_at', 'desc')
                 ->get();
+                
+            \Log::info('Found chat rooms for brand', [
+                'brand_id' => $user->id,
+                'room_count' => $chatRooms->count(),
+                'room_ids' => $chatRooms->pluck('room_id')->toArray(),
+            ]);
         } elseif ($user->isCreator()) {
             $chatRooms = ChatRoom::where('creator_id', $user->id)
                 ->with(['brand', 'campaign', 'lastMessage.sender'])
                 ->orderBy('last_message_at', 'desc')
                 ->get();
+                
+            \Log::info('Found chat rooms for creator', [
+                'creator_id' => $user->id,
+                'room_count' => $chatRooms->count(),
+                'room_ids' => $chatRooms->pluck('room_id')->toArray(),
+            ]);
         } elseif ($user->isAdmin()) {
             // Admin can see all chat rooms
             $chatRooms = ChatRoom::with(['creator', 'brand', 'campaign', 'lastMessage.sender'])
                 ->orderBy('last_message_at', 'desc')
                 ->get();
+                
+            \Log::info('Found chat rooms for admin', [
+                'admin_id' => $user->id,
+                'room_count' => $chatRooms->count(),
+                'room_ids' => $chatRooms->pluck('room_id')->toArray(),
+            ]);
         }
 
         $formattedRooms = $chatRooms->map(function ($room) use ($user) {
