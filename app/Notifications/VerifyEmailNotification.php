@@ -40,13 +40,13 @@ class VerifyEmailNotification extends Notification
         $verificationUrl = $this->verificationUrl($notifiable);
 
         return (new MailMessage)
-            ->subject('Verify Email Address - Nexa Platform')
-            ->greeting('Hello ' . $notifiable->name . '!')
-            ->line('Thank you for registering with Nexa! Please click the button below to verify your email address.')
-            ->action('Verify Email Address', $verificationUrl)
-            ->line('If you did not create an account, no further action is required.')
-            ->line('This verification link will expire in 60 minutes.')
-            ->salutation('Best regards, The Nexa Team');
+            ->subject('Verificar Endereço de Email - Plataforma Nexa')
+            ->greeting('Olá ' . $notifiable->name . '!')
+            ->line('Obrigado por se registrar na Nexa! Por favor, clique no botão abaixo para verificar seu endereço de email.')
+            ->action('Verificar Endereço de Email', $verificationUrl)
+            ->line('Se você não criou uma conta, nenhuma ação adicional é necessária.')
+            ->line('Este link de verificação expirará em 60 minutos.')
+            ->salutation('Atenciosamente, A Equipe Nexa');
     }
 
     /**

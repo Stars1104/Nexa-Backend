@@ -617,19 +617,19 @@ class ChatController extends Controller
 
             if ($user->isBrand()) {
                 // Message for brand
-                $brandMessage = "🩷 Parabéns pela uma parceria iniciada com uma criadora da nossa plataforma!\n\n" .
-                    "Para garantir o melhor resultado possível, é essencial que você oriente a criadora com detalhamento e clareza sobre como deseja que o conteúdo seja feito quanto mais específica for a comunicação, maior será a qualidade da entrega.\n\n" .
-                    "Aqui estão os próximos passos importantes:\n\n" .
-                    "• Insira o valor da campanha na aba \"Saldo\" da plataforma.\n" .
-                    "• Assim que a criadora enviar o conteúdo pronto e editado, você poderá liberar o pagamento clicando em \"Finalizar Campanha\" e avaliando o trabalho entregue.\n" .
-                    "• Reforce com a criadora os pontos principais do briefing para que o vídeo esteja alinhado com o objetivo da marca.\n" .
-                    "• Caso o conteúdo não esteja de acordo com o solicitado, serão permitidos até dois pedidos de ajustes por vídeo.\n\n" .
-                    "Regras importantes que garantem a segurança da campanha:\n\n" .
-                    "✔ Toda comunicação deve ser feita exclusivamente pelo chat da NEXA.\n" .
-                    "✘ Não é permitido compartilhar dados bancários, contatos pessoais ou números de WhatsApp com a criadora.\n" .
-                    "⚠️ O descumprimento dos prazos ou das regras pode resultar em advertência ou bloqueio do perfil.\n" .
-                    "🚫 Caso a campanha precise ser cancelada, o produto enviado deve ser solicitado de volta, e a criadora poderá ser penalizada conforme as diretrizes da plataforma.\n\n" .
-                    "A NEXA está aqui para facilitar conexões seguras e profissionais. Conte conosco para apoiar o sucesso da sua campanha! 💼📢";
+                $brandMessage = "🎉 **Parabéns pela parceria iniciada!**\n\n" .
+                    "Você acaba de conectar com uma criadora talentosa da nossa plataforma. Para garantir o melhor resultado possível, é essencial orientar com detalhamento e clareza.\n\n" .
+                    "**📋 Próximos Passos Importantes:**\n\n" .
+                    "• **Saldo:** Insira o valor da campanha na aba \"Saldo\" da plataforma\n" .
+                    "• **Pagamento:** Libere o pagamento após aprovar o conteúdo final\n" .
+                    "• **Briefing:** Reforce os pontos principais com a criadora\n" .
+                    "• **Ajustes:** Até 2 pedidos de ajustes por vídeo são permitidos\n\n" .
+                    "**🔒 Regras de Segurança:**\n\n" .
+                    "✅ **Comunicação:** Exclusivamente pelo chat da NEXA\n" .
+                    "❌ **Dados:** Não compartilhe informações bancárias ou pessoais\n" .
+                    "⚠️ **Prazos:** Descumprimento pode resultar em advertência\n" .
+                    "🚫 **Cancelamento:** Produtos devem ser devolvidos se necessário\n\n" .
+                    "A NEXA está aqui para facilitar conexões seguras e profissionais! 💼✨";
 
                 Message::create([
                     'chat_room_id' => $room->id,
@@ -640,22 +640,22 @@ class ChatController extends Controller
                 ]);
             } else {
                 // Message for creator
-                $creatorMessage = "🩷 Parabéns, você foi aprovada em mais uma campanha da NEXA!\n\n" .
-                    "Estamos muito felizes em contar com você e esperamos que mostre toda sua criatividade, comprometimento e qualidade para representar bem a marca e a nossa plataforma.\n\n" .
-                    "Antes de começar, fique atenta aos pontos abaixo para garantir uma parceria de sucesso:\n\n" .
-                    "• Confirme seu endereço de envio o quanto antes, para que o produto possa ser encaminhado sem atrasos.\n" .
-                    "• Você devera entregar o roteiro da campanha em até 5 dias úteis.\n" .
-                    "• É essencial seguir todas as orientações da marca presentes no briefing.\n" .
-                    "• Aguarde a aprovação do roteiro antes de gravar o conteúdo.\n" .
-                    "• Após a aprovação do roteiro, o conteúdo final deve ser entregue em até 5 dias úteis.\n" .
-                    "• O vídeo deve ser enviado com qualidade profissional, e poderá passar por até 2 solicitações de ajustes, caso não esteja conforme o briefing.\n" .
-                    "• Pedimos que mantenha o retorno rápido nas mensagens dentro do chat da plataforma.\n\n" .
-                    "Atenção para algumas regras importantes:\n\n" .
-                    "✔ Toda a comunicação deve acontecer exclusivamente pelo chat da Anexa.\n" .
-                    "✘ Não é permitido compartilhar dados bancários, e-mails ou número de WhatsApp dentro da plataforma.\n" .
-                    "⚠️ O não cumprimento dos prazos ou regras pode acarretar em penalizações ou banimento.\n" .
-                    "🚫 Caso a campanha seja cancelada, o produto deverá ser devolvido, e a criadora poderá ser punida.\n\n" .
-                    "Estamos aqui para garantir a melhor experiência para criadoras e marcas. Boa campanha! 💼💡";
+                $creatorMessage = "🎉 **Parabéns! Você foi aprovada!**\n\n" .
+                    "Estamos muito felizes em contar com você! Mostre toda sua criatividade, comprometimento e qualidade para representar bem a marca e nossa plataforma.\n\n" .
+                    "**📋 Checklist de Sucesso:**\n\n" .
+                    "• **Endereço:** Confirme seu endereço de envio o quanto antes\n" .
+                    "• **Roteiro:** Entregue em até 5 dias úteis\n" .
+                    "• **Briefing:** Siga todas as orientações da marca\n" .
+                    "• **Aprovação:** Aguarde aprovação do roteiro antes de gravar\n" .
+                    "• **Conteúdo:** Entregue o vídeo final em até 5 dias úteis após aprovação\n" .
+                    "• **Qualidade:** Vídeo profissional, até 2 ajustes permitidos\n" .
+                    "• **Comunicação:** Mantenha retorno rápido no chat\n\n" .
+                    "**🔒 Regras Importantes:**\n\n" .
+                    "✅ **Chat:** Comunicação exclusivamente pela NEXA\n" .
+                    "❌ **Dados:** Não compartilhe informações bancárias ou pessoais\n" .
+                    "⚠️ **Prazos:** Descumprimento pode resultar em penalizações\n" .
+                    "🚫 **Cancelamento:** Produtos devem ser devolvidos se necessário\n\n" .
+                    "Estamos aqui para garantir a melhor experiência! Boa campanha! 💼💡";
 
                 Message::create([
                     'chat_room_id' => $room->id,
@@ -666,15 +666,16 @@ class ChatController extends Controller
                 ]);
             }
 
-            // Send automatic quote message
-            $quoteMessage = "💼 **Detalhes da Campanha:**\n" .
-                "• **Status:** Conectado\n\n" .
-                "Você está agora conectado e pode começar a conversar. Por favor, use o chat para todas as comunicações e siga as diretrizes da plataforma.";
+            // Send automatic status message
+            $statusMessage = "💼 **Detalhes da Campanha**\n\n" .
+                "**Status:** 🟢 Conectado\n\n" .
+                "Você está agora conectado e pode começar a conversar!\n" .
+                "Use o chat para todas as comunicações e siga as diretrizes da plataforma.";
 
             Message::create([
                 'chat_room_id' => $room->id,
                 'sender_id' => $user->id,
-                'message' => $quoteMessage,
+                'message' => $statusMessage,
                 'message_type' => 'system',
                 'is_system_message' => true,
             ]);

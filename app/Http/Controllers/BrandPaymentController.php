@@ -66,8 +66,8 @@ class BrandPaymentController extends Controller
                 ], 503);
             }
 
-            // Validate API key format
-            if (!preg_match('/^sk_(test|live)_[a-zA-Z0-9]+$/', $this->apiKey)) {
+            // Validate API key format - Pagar.me keys start with 'sk_'
+            if (!preg_match('/^sk_[a-zA-Z0-9]+$/', $this->apiKey)) {
                 Log::error('Invalid Pagar.me API key format', ['key' => substr($this->apiKey, 0, 10) . '...']);
                 return response()->json([
                     'success' => false,

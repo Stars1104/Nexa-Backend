@@ -63,19 +63,22 @@ class ContractController extends Controller
                 "Estamos aqui para garantir a melhor experiência para criadoras e marcas. Boa campanha! 💼💡";
 
             // Message for brand
-            $brandMessage = "🩷 Parabéns pela uma parceria iniciada com uma criadora da nossa plataforma!\n\n" .
-                "Para garantir o melhor resultado possível, é essencial que você oriente a criadora com detalhamento e clareza sobre como deseja que o conteúdo seja feito quanto mais específica for a comunicação, maior será a qualidade da entrega.\n\n" .
-                "Aqui estão os próximos passos importantes:\n\n" .
-                "• Insira o valor da campanha na aba \"Saldo\" da plataforma.\n" .
-                "• Assim que a criadora enviar o conteúdo pronto e editado, você poderá liberar o pagamento clicando em \"Finalizar Campanha\" e avaliando o trabalho entregue.\n" .
-                "• Reforce com a criadora os pontos principais do briefing para que o vídeo esteja alinhado com o objetivo da marca.\n" .
-                "• Caso o conteúdo não esteja de acordo com o solicitado, serão permitidos até dois pedidos de ajustes por vídeo.\n\n" .
-                "Regras importantes que garantem a segurança da campanha:\n\n" .
-                "✔ Toda comunicação deve ser feita exclusivamente pelo chat da NEXA.\n" .
-                "✘ Não é permitido compartilhar dados bancários, contatos pessoais ou números de WhatsApp com a criadora.\n" .
-                "⚠️ O descumprimento dos prazos ou das regras pode resultar em advertência ou bloqueio do perfil.\n" .
-                "🚫 Caso a campanha precise ser cancelada, o produto enviado deve ser solicitado de volta, e a criadora poderá ser penalizada conforme as diretrizes da plataforma.\n\n" .
-                "A NEXA está aqui para facilitar conexões seguras e profissionais. Conte conosco para apoiar o sucesso da sua campanha! 💼📢";
+            $brandMessage = "🎉 **Parabéns pela parceria iniciada com uma criadora da nossa plataforma!**\n\n" .
+                "Para garantir o melhor resultado possível, é essencial que você oriente a criadora com detalhamento e clareza sobre como deseja que o conteúdo seja feito. **Quanto mais específica for a comunicação, maior será a qualidade da entrega.**\n\n" .
+                "**📋 Próximos Passos Importantes:**\n\n" .
+                "• **💰 Saldo da Campanha:** Insira o valor da campanha na aba \"Saldo\" da plataforma\n" .
+                "• **✅ Aprovação de Conteúdo:** Avalie o roteiro antes da gravação para garantir alinhamento\n" .
+                "• **🎬 Entrega Final:** Após receber o conteúdo pronto e editado, libere o pagamento\n" .
+                "• **⭐ Finalização:** Clique em \"Finalizar Campanha\" e avalie o trabalho entregue\n" .
+                "• **📝 Briefing:** Reforce os pontos principais com a criadora para alinhar com o objetivo da marca\n" .
+                "• **🔄 Ajustes:** Permita até 2 pedidos de ajustes por vídeo caso necessário\n\n" .
+                "**🔒 Regras de Segurança da Campanha:**\n\n" .
+                "✅ **Comunicação Exclusiva:** Toda comunicação deve ser feita pelo chat da NEXA\n" .
+                "❌ **Proteção de Dados:** Não compartilhe dados bancários, contatos pessoais ou WhatsApp\n" .
+                "⚠️ **Cumprimento de Prazos:** Descumprimento pode resultar em advertência ou bloqueio\n" .
+                "🚫 **Cancelamento:** Em caso de cancelamento, o produto deve ser solicitado de volta\n\n" .
+                "**💼 A NEXA está aqui para facilitar conexões seguras e profissionais!**\n" .
+                "Conte conosco para apoiar o sucesso da sua campanha! 📢✨";
 
             // Create messages in the chat room
             \App\Models\Message::create([
@@ -95,11 +98,11 @@ class ContractController extends Controller
             ]);
 
             // Send automatic quote message
-            $quoteMessage = "💼 **Detalhes da Campanha:**\n" .
-                "• **Orçamento:** {$contract->formatted_budget}\n" .
-                "• **Duração:** {$contract->estimated_days} dias\n" .
-                "• **Status:** Ativa\n\n" .
-                "A campanha está agora ativa e ambas as partes podem começar a trabalhar juntas. Por favor, use o chat para todas as comunicações e siga as diretrizes da plataforma.";
+            $quoteMessage = "💼 **Detalhes da Campanha:**\n\n" .
+                "**Orçamento:** {$contract->formatted_budget}\n" .
+                "**Duração:** {$contract->estimated_days} dias\n" .
+                "**Status:** 🟢 Ativa\n\n" .
+                "A campanha está agora ativa e ambas as partes podem começar a trabalhar juntas. **Use o chat para todas as comunicações** e siga as diretrizes da plataforma para uma parceria de sucesso.";
 
             \App\Models\Message::create([
                 'chat_room_id' => $chatRoom->id,

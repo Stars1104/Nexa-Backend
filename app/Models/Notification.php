@@ -76,108 +76,108 @@ class Notification extends Model
         return self::create([
             'user_id' => $userId,
             'type' => 'login_detected',
-            'title' => 'New Login Detected',
-            'message' => 'A new login was detected on your account. If this wasn\'t you, please secure your account immediately.',
+            'title' => 'Novo Login Detectado',
+            'message' => 'Um novo login foi detectado na sua conta. Se não foi você, por favor, proteja sua conta imediatamente.',
             'data' => $loginData,
         ]);
     }
 
     public static function createNewUserRegistration($userId, $registrationData = []): self
     {
-        $userName = $registrationData['user_name'] ?? 'Unknown User';
-        $userRole = $registrationData['user_role'] ?? 'Unknown Role';
+        $userName = $registrationData['user_name'] ?? 'Usuário Desconhecido';
+        $userRole = $registrationData['user_role'] ?? 'Papel Desconhecido';
         
         return self::create([
             'user_id' => $userId,
             'type' => 'new_user_registration',
-            'title' => 'New User Registration',
-            'message' => "New {$userRole} registered: {$userName}",
+            'title' => 'Novo Registro de Usuário',
+            'message' => "Novo {$userRole} registrado: {$userName}",
             'data' => $registrationData,
         ]);
     }
 
     public static function createNewCampaign($userId, $campaignData = []): self
     {
-        $brandName = $campaignData['brand_name'] ?? 'Unknown Brand';
-        $campaignTitle = $campaignData['campaign_title'] ?? 'Unknown Campaign';
+        $brandName = $campaignData['brand_name'] ?? 'Marca Desconhecida';
+        $campaignTitle = $campaignData['campaign_title'] ?? 'Campanha Desconhecida';
         
         return self::create([
             'user_id' => $userId,
             'type' => 'new_campaign',
-            'title' => 'New Campaign Created',
-            'message' => "{$brandName} posted new campaign: {$campaignTitle}",
+            'title' => 'Nova Campanha Criada',
+            'message' => "{$brandName} postou nova campanha: {$campaignTitle}",
             'data' => $campaignData,
         ]);
     }
 
     public static function createNewApplication($userId, $applicationData = []): self
     {
-        $creatorName = $applicationData['creator_name'] ?? 'Unknown Creator';
-        $campaignTitle = $applicationData['campaign_title'] ?? 'Unknown Campaign';
-        $brandName = $applicationData['brand_name'] ?? 'Unknown Brand';
+        $creatorName = $applicationData['creator_name'] ?? 'Criador Desconhecido';
+        $campaignTitle = $applicationData['campaign_title'] ?? 'Campanha Desconhecida';
+        $brandName = $applicationData['brand_name'] ?? 'Marca Desconhecida';
         
         return self::create([
             'user_id' => $userId,
             'type' => 'new_application',
-            'title' => 'New Campaign Application',
-            'message' => "{$creatorName} applied to {$brandName}'s campaign: {$campaignTitle}",
+            'title' => 'Nova Campanha Aplicada',
+            'message' => "{$creatorName} aplicou para a campanha de {$brandName}: {$campaignTitle}",
             'data' => $applicationData,
         ]);
     }
 
     public static function createNewBid($userId, $bidData = []): self
     {
-        $campaignTitle = $bidData['campaign_title'] ?? 'Unknown Campaign';
-        $creatorName = $bidData['creator_name'] ?? 'Unknown Creator';
-        $bidAmount = $bidData['bid_amount'] ?? 'Unknown Amount';
+        $campaignTitle = $bidData['campaign_title'] ?? 'Campanha Desconhecida';
+        $creatorName = $bidData['creator_name'] ?? 'Criador Desconhecido';
+        $bidAmount = $bidData['bid_amount'] ?? 'Valor Desconhecido';
         
         return self::create([
             'user_id' => $userId,
             'type' => 'new_bid',
-            'title' => 'New Bid Received',
-            'message' => "New bid from {$creatorName} for '{$campaignTitle}' - R$ {$bidAmount}",
+            'title' => 'Nova Proposta Recebida',
+            'message' => "Nova proposta de {$creatorName} para '{$campaignTitle}' - R$ {$bidAmount}",
             'data' => $bidData,
         ]);
     }
 
     public static function createPaymentActivity($userId, $paymentData = []): self
     {
-        $paymentType = $paymentData['payment_type'] ?? 'Unknown Payment';
-        $userName = $paymentData['user_name'] ?? 'Unknown User';
-        $amount = $paymentData['amount'] ?? 'Unknown Amount';
+        $paymentType = $paymentData['payment_type'] ?? 'Tipo de Pagamento Desconhecido';
+        $userName = $paymentData['user_name'] ?? 'Usuário Desconhecido';
+        $amount = $paymentData['amount'] ?? 'Valor Desconhecido';
         
         return self::create([
             'user_id' => $userId,
             'type' => 'payment_activity',
-            'title' => 'Payment Activity',
-            'message' => "{$paymentType} from {$userName} - {$amount}",
+            'title' => 'Atividade de Pagamento',
+            'message' => "{$paymentType} de {$userName} - {$amount}",
             'data' => $paymentData,
         ]);
     }
 
     public static function createPortfolioUpdate($userId, $portfolioData = []): self
     {
-        $userName = $portfolioData['user_name'] ?? 'Unknown User';
-        $updateType = $portfolioData['update_type'] ?? 'Unknown Update';
+        $userName = $portfolioData['user_name'] ?? 'Usuário Desconhecido';
+        $updateType = $portfolioData['update_type'] ?? 'Tipo de Atualização Desconhecido';
         
         return self::create([
             'user_id' => $userId,
             'type' => 'portfolio_update',
-            'title' => 'Portfolio Update',
-            'message' => "{$userName} updated their portfolio: {$updateType}",
+            'title' => 'Atualização de Portfólio',
+            'message' => "{$userName} atualizou seu portfólio: {$updateType}",
             'data' => $portfolioData,
         ]);
     }
 
     public static function createSystemActivity($userId, $activityData = []): self
     {
-        $activityType = $activityData['activity_type'] ?? 'Unknown Activity';
+        $activityType = $activityData['activity_type'] ?? 'Atividade Desconhecida';
         
         return self::create([
             'user_id' => $userId,
             'type' => 'system_activity',
-            'title' => 'System Activity',
-            'message' => "System activity detected: {$activityType}",
+            'title' => 'Atividade do Sistema',
+            'message' => "Atividade do sistema detectada: {$activityType}",
             'data' => $activityData,
         ]);
     }
@@ -187,8 +187,8 @@ class Notification extends Model
         return self::create([
             'user_id' => $userId,
             'type' => 'new_project',
-            'title' => 'New Project Available',
-            'message' => "A new project '{$campaignTitle}' is now available for applications.",
+            'title' => 'Novo Projeto Disponível',
+            'message' => "Um novo projeto '{$campaignTitle}' está agora disponível para aplicações.",
             'data' => [
                 'campaign_id' => $campaignId,
                 'campaign_title' => $campaignTitle,
@@ -201,8 +201,8 @@ class Notification extends Model
         return self::create([
             'user_id' => $userId,
             'type' => 'project_approved',
-            'title' => 'Project Approved',
-            'message' => "Your project '{$campaignTitle}' has been approved and is now live.",
+            'title' => 'Projeto Aprovado',
+            'message' => "Seu projeto '{$campaignTitle}' foi aprovado e está agora ativo.",
             'data' => [
                 'campaign_id' => $campaignId,
                 'campaign_title' => $campaignTitle,
@@ -215,8 +215,8 @@ class Notification extends Model
         return self::create([
             'user_id' => $userId,
             'type' => 'project_rejected',
-            'title' => 'Project Rejected',
-            'message' => "Your project '{$campaignTitle}' was not approved." . ($reason ? " Reason: {$reason}" : ''),
+            'title' => 'Projeto Rejeitado',
+            'message' => "Seu projeto '{$campaignTitle}' não foi aprovado." . ($reason ? " Motivo: {$reason}" : ''),
             'data' => [
                 'campaign_id' => $campaignId,
                 'campaign_title' => $campaignTitle,
@@ -230,8 +230,8 @@ class Notification extends Model
         return self::create([
             'user_id' => $userId,
             'type' => 'proposal_approved',
-            'title' => 'Proposal Approved',
-            'message' => "Your proposal for '{$campaignTitle}' has been approved by {$brandName}.",
+            'title' => 'Proposta Aprovada',
+            'message' => "Sua proposta para '{$campaignTitle}' foi aprovada por {$brandName}.",
             'data' => [
                 'campaign_id' => $campaignId,
                 'campaign_title' => $campaignTitle,
@@ -245,8 +245,8 @@ class Notification extends Model
         return self::create([
             'user_id' => $userId,
             'type' => 'proposal_rejected',
-            'title' => 'Proposal Rejected',
-            'message' => "Your proposal for '{$campaignTitle}' was not selected by {$brandName}." . ($reason ? " Reason: {$reason}" : ''),
+            'title' => 'Proposta Rejeitada',
+            'message' => "Sua proposta para '{$campaignTitle}' não foi selecionada por {$brandName}." . ($reason ? " Motivo: {$reason}" : ''),
             'data' => [
                 'campaign_id' => $campaignId,
                 'campaign_title' => $campaignTitle,
@@ -261,8 +261,8 @@ class Notification extends Model
         return self::create([
             'user_id' => $userId,
             'type' => 'new_message',
-            'title' => 'New Message',
-            'message' => "You have a new message from {$senderName}: {$messagePreview}",
+            'title' => 'Nova Mensagem',
+            'message' => "Você tem uma nova mensagem de {$senderName}: {$messagePreview}",
             'data' => [
                 'sender_id' => $senderId,
                 'sender_name' => $senderName,
@@ -274,13 +274,13 @@ class Notification extends Model
 
     public static function createContractTerminated($userId, $contractData = []): self
     {
-        $reason = $contractData['reason'] ?? 'Contract terminated';
+        $reason = $contractData['reason'] ?? 'Contrato encerrado';
         
         return self::create([
             'user_id' => $userId,
             'type' => 'contract_terminated',
-            'title' => 'Contract Terminated',
-            'message' => "Contract has been terminated: {$reason}",
+            'title' => 'Contrato Encerrado',
+            'message' => "Contrato foi encerrado: {$reason}",
             'data' => $contractData,
         ]);
     }
@@ -292,8 +292,8 @@ class Notification extends Model
         return self::create([
             'user_id' => $userId,
             'type' => 'payment_available',
-            'title' => 'Payment Available',
-            'message' => "Payment of R$ {$creatorAmount} is now available for withdrawal",
+            'title' => 'Pagamento Disponível',
+            'message' => "Pagamento de R$ {$creatorAmount} está agora disponível para saque",
             'data' => $paymentData,
         ]);
     }

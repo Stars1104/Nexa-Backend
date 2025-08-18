@@ -19,17 +19,32 @@ class BrandRankingController extends Controller
     public function getBrandRankings(): JsonResponse
     {
         try {
+            \Log::info('Starting brand rankings calculation');
+            
             $rankings = [
                 'mostPosted' => $this->getMostPostedBrands(),
                 'mostHired' => $this->getMostHiredBrands(),
                 'mostPaid' => $this->getMostPaidBrands(),
             ];
 
+            \Log::info('Brand rankings calculated successfully', [
+                'mostPostedCount' => count($rankings['mostPosted']),
+                'mostHiredCount' => count($rankings['mostHired']),
+                'mostPaidCount' => count($rankings['mostPaid']),
+            ]);
+
             return response()->json([
                 'success' => true,
                 'data' => $rankings,
             ]);
         } catch (\Exception $e) {
+            \Log::error('Failed to fetch brand rankings', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch brand rankings: ' . $e->getMessage(),
@@ -42,26 +57,36 @@ class BrandRankingController extends Controller
      */
     private function getMostPostedBrands(): array
     {
-        return User::where('role', 'brand')
-            ->withCount(['campaigns as total_campaigns'])
-            ->having('total_campaigns', '>', 0)
-            ->orderBy('total_campaigns', 'desc')
-            ->limit(10)
-            ->get()
-            ->map(function ($brand, $index) {
-                return [
-                    'rank' => $index + 1,
-                    'id' => $brand->id,
-                    'name' => $brand->name,
-                    'company_name' => $brand->company_name,
-                    'display_name' => $brand->company_name ?: $brand->name,
-                    'total_campaigns' => $brand->total_campaigns,
-                    'avatar_url' => $brand->avatar_url,
-                    'has_premium' => $brand->has_premium,
-                    'created_at' => $brand->created_at,
-                ];
-            })
-            ->toArray();
+        try {
+            $brands = User::where('role', 'brand')
+                ->withCount(['campaigns as total_campaigns'])
+                ->get()
+                ->filter(function ($brand) {
+                    return $brand->total_campaigns > 0;
+                })
+                ->sortByDesc('total_campaigns')
+                ->take(10)
+                ->map(function ($brand, $index) {
+                    return [
+                        'rank' => $index + 1,
+                        'id' => $brand->id,
+                        'name' => $brand->name,
+                        'company_name' => $brand->company_name,
+                        'display_name' => $brand->company_name ?: $brand->name,
+                        'total_campaigns' => $brand->total_campaigns,
+                        'avatar_url' => $brand->avatar_url,
+                        'has_premium' => $brand->has_premium,
+                        'created_at' => $brand->created_at,
+                    ];
+                })
+                ->toArray();
+
+            \Log::info('Most posted brands calculated', ['count' => count($brands)]);
+            return $brands;
+        } catch (\Exception $e) {
+            \Log::error('Error calculating most posted brands', ['error' => $e->getMessage()]);
+            return [];
+        }
     }
 
     /**
@@ -69,30 +94,40 @@ class BrandRankingController extends Controller
      */
     private function getMostHiredBrands(): array
     {
-        return User::where('role', 'brand')
-            ->withCount([
-                'brandContracts as total_contracts' => function ($query) {
-                    $query->where('status', 'completed');
-                }
-            ])
-            ->having('total_contracts', '>', 0)
-            ->orderBy('total_contracts', 'desc')
-            ->limit(10)
-            ->get()
-            ->map(function ($brand, $index) {
-                return [
-                    'rank' => $index + 1,
-                    'id' => $brand->id,
-                    'name' => $brand->name,
-                    'company_name' => $brand->company_name,
-                    'display_name' => $brand->company_name ?: $brand->name,
-                    'total_contracts' => $brand->total_contracts,
-                    'avatar_url' => $brand->avatar_url,
-                    'has_premium' => $brand->has_premium,
-                    'created_at' => $brand->created_at,
-                ];
-            })
-            ->toArray();
+        try {
+            $brands = User::where('role', 'brand')
+                ->withCount([
+                    'brandContracts as total_contracts' => function ($query) {
+                        $query->where('status', 'completed');
+                    }
+                ])
+                ->get()
+                ->filter(function ($brand) {
+                    return $brand->total_contracts > 0;
+                })
+                ->sortByDesc('total_contracts')
+                ->take(10)
+                ->map(function ($brand, $index) {
+                    return [
+                        'rank' => $index + 1,
+                        'id' => $brand->id,
+                        'name' => $brand->name,
+                        'company_name' => $brand->company_name,
+                        'display_name' => $brand->company_name ?: $brand->name,
+                        'total_contracts' => $brand->total_contracts,
+                        'avatar_url' => $brand->avatar_url,
+                        'has_premium' => $brand->has_premium,
+                        'created_at' => $brand->created_at,
+                    ];
+                })
+                ->toArray();
+
+            \Log::info('Most hired brands calculated', ['count' => count($brands)]);
+            return $brands;
+        } catch (\Exception $e) {
+            \Log::error('Error calculating most hired brands', ['error' => $e->getMessage()]);
+            return [];
+        }
     }
 
     /**
@@ -100,29 +135,39 @@ class BrandRankingController extends Controller
      */
     private function getMostPaidBrands(): array
     {
-        return User::where('role', 'brand')
-            ->withSum(['brandPayments as total_paid' => function ($query) {
-                $query->where('status', 'completed');
-            }], 'total_amount')
-            ->having('total_paid', '>', 0)
-            ->orderBy('total_paid', 'desc')
-            ->limit(10)
-            ->get()
-            ->map(function ($brand, $index) {
-                return [
-                    'rank' => $index + 1,
-                    'id' => $brand->id,
-                    'name' => $brand->name,
-                    'company_name' => $brand->company_name,
-                    'display_name' => $brand->company_name ?: $brand->name,
-                    'total_paid' => (float) $brand->total_paid,
-                    'total_paid_formatted' => 'R$ ' . number_format($brand->total_paid, 2, ',', '.'),
-                    'avatar_url' => $brand->avatar_url,
-                    'has_premium' => $brand->has_premium,
-                    'created_at' => $brand->created_at,
-                ];
-            })
-            ->toArray();
+        try {
+            $brands = User::where('role', 'brand')
+                ->withSum(['brandPayments as total_paid' => function ($query) {
+                    $query->where('status', 'completed');
+                }], 'total_amount')
+                ->get()
+                ->filter(function ($brand) {
+                    return $brand->total_paid > 0;
+                })
+                ->sortByDesc('total_paid')
+                ->take(10)
+                ->map(function ($brand, $index) {
+                    return [
+                        'rank' => $index + 1,
+                        'id' => $brand->id,
+                        'name' => $brand->name,
+                        'company_name' => $brand->company_name,
+                        'display_name' => $brand->company_name ?: $brand->name,
+                        'total_paid' => (float) $brand->total_paid,
+                        'total_paid_formatted' => 'R$ ' . number_format($brand->total_paid, 2, ',', '.'),
+                        'avatar_url' => $brand->avatar_url,
+                        'has_premium' => $brand->has_premium,
+                        'created_at' => $brand->created_at,
+                    ];
+                })
+                ->toArray();
+
+            \Log::info('Most paid brands calculated', ['count' => count($brands)]);
+            return $brands;
+        } catch (\Exception $e) {
+            \Log::error('Error calculating most paid brands', ['error' => $e->getMessage()]);
+            return [];
+        }
     }
 
     /**
@@ -131,6 +176,8 @@ class BrandRankingController extends Controller
     public function getComprehensiveRankings(): JsonResponse
     {
         try {
+            \Log::info('Starting comprehensive brand rankings calculation');
+            
             $brands = User::where('role', 'brand')
                 ->withCount([
                     'campaigns as total_campaigns',
@@ -141,9 +188,11 @@ class BrandRankingController extends Controller
                 ->withSum(['brandPayments as total_paid' => function ($query) {
                     $query->where('status', 'completed');
                 }], 'total_amount')
-                ->orderBy('total_paid', 'desc')
-                ->limit(20)
                 ->get()
+                ->filter(function ($brand) {
+                    // Only include brands with some activity
+                    return $brand->total_campaigns > 0 || $brand->total_contracts > 0 || ($brand->total_paid ?? 0) > 0;
+                })
                 ->map(function ($brand, $index) {
                     return [
                         'rank' => $index + 1,
@@ -167,13 +216,25 @@ class BrandRankingController extends Controller
                     $brand['rank'] = $index + 1;
                     return $brand;
                 })
+                ->take(20)
                 ->toArray();
+
+            \Log::info('Comprehensive brand rankings calculated successfully', [
+                'totalBrands' => count($brands),
+            ]);
 
             return response()->json([
                 'success' => true,
                 'data' => $brands,
             ]);
         } catch (\Exception $e) {
+            \Log::error('Failed to fetch comprehensive brand rankings', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch comprehensive brand rankings: ' . $e->getMessage(),
