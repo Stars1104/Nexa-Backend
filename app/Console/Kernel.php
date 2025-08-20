@@ -27,7 +27,7 @@ class Kernel extends ConsoleKernel
         $schedule->command('messages:check')->everyFifteenMinutes();
         
         // Check timeline deadlines every hour
-        $schedule->command('timeline:check-deadlines')->hourly();
+        $schedule->command('milestones:check-deadlines')->hourly();
     }
 
     /**

@@ -14,6 +14,20 @@ class AutomaticPaymentService
     public function processContractPayment(Contract $contract): array
     {
         try {
+            Log::info('Processing automatic payment for contract', [
+                'contract_id' => $contract->id,
+                'brand_id' => $contract->brand_id,
+                'creator_id' => $contract->creator_id,
+                'budget' => $contract->budget,
+                'status' => $contract->status,
+                'workflow_status' => $contract->workflow_status,
+            ]);
+
+            // Validate contract
+            if (!$contract->exists) {
+                throw new \Exception('Contract does not exist');
+            }
+
             // For now, we'll simulate a successful payment
             // In a real implementation, this would integrate with a payment gateway
             
@@ -30,6 +44,10 @@ class AutomaticPaymentService
                 'processed_at' => now(),
             ]);
 
+            if (!$payment) {
+                throw new \Exception('Failed to create payment record');
+            }
+
             // Update contract status to active
             $contract->update([
                 'status' => 'active',
@@ -40,6 +58,8 @@ class AutomaticPaymentService
                 'contract_id' => $contract->id,
                 'payment_id' => $payment->id,
                 'amount' => $contract->budget,
+                'new_status' => 'active',
+                'new_workflow_status' => 'active',
             ]);
 
             return [
@@ -51,7 +71,10 @@ class AutomaticPaymentService
         } catch (\Exception $e) {
             Log::error('Payment processing failed', [
                 'contract_id' => $contract->id,
+                'brand_id' => $contract->brand_id,
+                'creator_id' => $contract->creator_id,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return [

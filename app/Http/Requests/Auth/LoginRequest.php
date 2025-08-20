@@ -59,23 +59,34 @@ class LoginRequest extends FormRequest
             ]);
         }
 
+        // Clear rate limiting on successful authentication
         RateLimiter::clear($this->throttleKey());
     }
 
     /**
      * Ensure the login request is not rate limited.
+     * This is now more lenient since we have route-level rate limiting.
      *
      * @throws \Illuminate\Validation\ValidationException
      */
     public function ensureIsNotRateLimited(): void
     {
-        if (! RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
+        // More lenient rate limiting for login attempts (10 attempts per 5 minutes)
+        if (! RateLimiter::tooManyAttempts($this->throttleKey(), 10)) {
             return;
         }
 
         event(new Lockout($this));
 
         $seconds = RateLimiter::availableIn($this->throttleKey());
+
+        // Log rate limiting for debugging
+        \Log::info('Login rate limited', [
+            'email' => $this->input('email'),
+            'ip' => $this->ip(),
+            'seconds_remaining' => $seconds,
+            'throttle_key' => $this->throttleKey()
+        ]);
 
         throw ValidationException::withMessages([
             'email' => trans('auth.throttle', [

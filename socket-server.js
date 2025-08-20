@@ -49,7 +49,6 @@ io.on('connection', (socket) => {
         socket.join(notificationRoom);
         userNotificationRooms.set(userId, notificationRoom);
         
-        console.log(`User ${userId} joined notification room: ${notificationRoom}`);
     });
 
     // Join a specific chat room

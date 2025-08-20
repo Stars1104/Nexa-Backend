@@ -21,7 +21,7 @@ return new class extends Migration
             $table->decimal('budget', 10, 2); // Amount in reais
             $table->integer('estimated_days');
             $table->json('requirements')->nullable();
-            $table->enum('status', ['active', 'completed', 'cancelled', 'disputed'])->default('active');
+            $table->enum('status', ['pending', 'active', 'completed', 'cancelled', 'disputed', 'payment_failed'])->default('active');
             $table->timestamp('started_at');
             $table->timestamp('expected_completion_at');
             $table->timestamp('completed_at')->nullable();

@@ -4,11 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\CampaignTimeline;
 use App\Models\Contract;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
+use App\Services\NotificationService;
 use Carbon\Carbon;
 
 class CampaignTimelineController extends Controller
@@ -33,7 +36,7 @@ class CampaignTimelineController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $timeline = $contract->timeline()->orderBy('deadline')->get();
+        $timeline = $contract->timeline()->with(['deliveryMaterials.creator', 'contract'])->orderBy('deadline')->get();
 
         return response()->json([
             'success' => true,
@@ -50,7 +53,7 @@ class CampaignTimelineController extends Controller
             'contract_id' => 'required|exists:contracts,id',
         ]);
 
-        $contract = Contract::findOrFail($request->contract_id);
+        $contract = Contract::with('offer')->findOrFail($request->contract_id);
         
         // Only brand can create milestones
         if (Auth::user()->role !== 'brand' || $contract->brand_id !== Auth::id()) {
@@ -63,7 +66,8 @@ class CampaignTimelineController extends Controller
         }
 
         // Calculate deadlines based on offer creation date and estimated days
-        $startDate = $contract->offer->created_at ?? now();
+        // Use contract creation date as fallback if offer doesn't exist
+        $startDate = $contract->offer?->created_at ?? $contract->created_at ?? now();
         $totalDays = $contract->estimated_days ?? 7;
         
         $milestones = [
@@ -81,8 +85,8 @@ class CampaignTimelineController extends Controller
             ],
             [
                 'milestone_type' => 'video_submission',
-                'title' => 'Video Submission',
-                'description' => 'Submit the final video',
+                'title' => 'Image and Video Submission',
+                'description' => 'Submit the final image and video content',
                 'deadline' => $startDate->copy()->addDays(ceil($totalDays * 0.85)),
             ],
             [
@@ -93,16 +97,29 @@ class CampaignTimelineController extends Controller
             ],
         ];
 
-        $createdMilestones = [];
-        foreach ($milestones as $milestone) {
-            $createdMilestones[] = $contract->timeline()->create($milestone);
-        }
+        try {
+            $createdMilestones = [];
+            foreach ($milestones as $milestone) {
+                $createdMilestones[] = $contract->timeline()->create($milestone);
+            }
 
-        return response()->json([
-            'success' => true,
-            'data' => $createdMilestones,
-            'message' => 'Timeline milestones created successfully',
-        ]);
+            return response()->json([
+                'success' => true,
+                'data' => $createdMilestones,
+                'message' => 'Timeline milestones created successfully',
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to create timeline milestones', [
+                'contract_id' => $contract->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to create timeline milestones: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -175,13 +192,36 @@ class CampaignTimelineController extends Controller
             return response()->json(['error' => 'Cannot approve this milestone'], 400);
         }
 
-        $milestone->markAsApproved($request->comment);
+        try {
+            $milestone->markAsApproved($request->comment);
 
-        return response()->json([
-            'success' => true,
-            'data' => $milestone->fresh(),
-            'message' => 'Milestone approved successfully',
-        ]);
+            // Send notification to creator about milestone approval
+            try {
+                NotificationService::notifyCreatorOfMilestoneApproval($milestone);
+            } catch (\Exception $notificationError) {
+                Log::error('Failed to send milestone approval notification', [
+                    'milestone_id' => $milestone->id,
+                    'error' => $notificationError->getMessage()
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $milestone->fresh(),
+                'message' => 'Milestone approved successfully',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to approve milestone', [
+                'milestone_id' => $milestone->id,
+                'user_id' => Auth::id(),
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to approve milestone',
+            ], 500);
+        }
     }
 
     /**
@@ -374,7 +414,8 @@ class CampaignTimelineController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $timeline = $contract->timeline;
+        // Get the timeline collection first, then apply filters
+        $timeline = $contract->timeline()->with('deliveryMaterials.creator')->get();
         
         $statistics = [
             'total_milestones' => $timeline->count(),
@@ -393,5 +434,113 @@ class CampaignTimelineController extends Controller
             'success' => true,
             'data' => $statistics,
         ]);
+    }
+
+    /**
+     * Reject milestone
+     */
+    public function rejectMilestone(Request $request): JsonResponse
+    {
+        $request->validate([
+            'milestone_id' => 'required|exists:campaign_timelines,id',
+            'comment' => 'nullable|string|max:500',
+        ]);
+
+        $milestone = CampaignTimeline::findOrFail($request->milestone_id);
+        $contract = $milestone->contract;
+        
+        // Only brand can reject milestones
+        if (Auth::user()->role !== 'brand' || $contract->brand_id !== Auth::id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if (!$milestone->canBeApproved()) {
+            return response()->json(['error' => 'Cannot reject this milestone'], 400);
+        }
+
+        try {
+            $milestone->update([
+                'status' => 'rejected',
+                'comment' => $request->comment,
+            ]);
+
+            // Send notification to creator about milestone rejection
+            try {
+                NotificationService::notifyCreatorOfMilestoneRejection($milestone);
+            } catch (\Exception $notificationError) {
+                Log::error('Failed to send milestone rejection notification', [
+                    'milestone_id' => $milestone->id,
+                    'error' => $notificationError->getMessage()
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $milestone->fresh(),
+                'message' => 'Milestone rejected successfully',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to reject milestone', [
+                'milestone_id' => $milestone->id,
+                'user_id' => Auth::id(),
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to reject milestone',
+            ], 500);
+        }
+    }
+
+    /**
+     * Check and send automatic delay warnings
+     */
+    public function checkAndSendDelayWarnings(): JsonResponse
+    {
+        try {
+            $overdueMilestones = CampaignTimeline::where('deadline', '<', now())
+                ->where('status', 'pending')
+                ->where('is_delayed', false)
+                ->whereNull('delay_notified_at')
+                ->with(['contract.creator', 'contract.brand'])
+                ->get();
+
+            $warningsSent = 0;
+            foreach ($overdueMilestones as $milestone) {
+                try {
+                    // Send delay warning notification
+                    NotificationService::notifyCreatorOfMilestoneDelay($milestone);
+                    
+                    // Mark as notified
+                    $milestone->update([
+                        'delay_notified_at' => now(),
+                        'is_delayed' => true,
+                    ]);
+                    
+                    $warningsSent++;
+                } catch (\Exception $e) {
+                    Log::error('Failed to send delay warning for milestone', [
+                        'milestone_id' => $milestone->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => "Delay warnings sent for {$warningsSent} milestones",
+                'warnings_sent' => $warningsSent,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to check and send delay warnings', [
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to check and send delay warnings',
+            ], 500);
+        }
     }
 } 

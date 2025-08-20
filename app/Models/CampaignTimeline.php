@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Carbon\Carbon;
 
 class CampaignTimeline extends Model
@@ -41,10 +42,34 @@ class CampaignTimeline extends Model
         'extended_at' => 'datetime',
     ];
 
+    protected $appends = [
+        'can_upload_file',
+        'can_be_approved',
+        'can_request_approval',
+        'can_justify_delay',
+        'can_be_extended',
+        'is_extended',
+        'total_extension_days',
+        'days_until_deadline',
+        'days_overdue',
+        'is_overdue',
+        'status_icon',
+        'milestone_icon',
+        'status_color',
+        'formatted_deadline',
+        'formatted_completed_at',
+        'formatted_file_size',
+    ];
+
     // Relationships
     public function contract(): BelongsTo
     {
         return $this->belongsTo(Contract::class);
+    }
+
+    public function deliveryMaterials(): HasMany
+    {
+        return $this->hasMany(DeliveryMaterial::class, 'milestone_id');
     }
 
     // Milestone types
@@ -86,11 +111,14 @@ class CampaignTimeline extends Model
 
     public function isOverdue(): bool
     {
-        return $this->deadline->isPast() && !$this->isCompleted();
+        return $this->deadline && $this->deadline->isPast() && !$this->isCompleted();
     }
 
     public function getDaysUntilDeadline(): int
     {
+        if (!$this->deadline) {
+            return 0;
+        }
         return max(0, now()->diffInDays($this->deadline, false));
     }
 
@@ -287,7 +315,11 @@ class CampaignTimeline extends Model
      */
     public function canBeExtended(): bool
     {
-        return $this->contract->brand_id === auth()->id();
+        try {
+            return $this->contract && $this->contract->brand_id === (auth()->id() ?? 0);
+        } catch (\Exception $e) {
+            return false;
+        }
     }
 
     public function getFormattedFileSizeAttribute(): string
@@ -306,12 +338,12 @@ class CampaignTimeline extends Model
         return round($bytes, 2) . ' ' . $units[$pow];
     }
 
-    public function getFormattedDeadlineAttribute(): string
+    public function getFormattedDeadlineAttribute(): ?string
     {
-        return $this->deadline->format('M d, Y H:i');
+        return $this->deadline ? $this->deadline->format('M d, Y H:i') : null;
     }
 
-    public function getFormattedCompletedAtAttribute(): string
+    public function getFormattedCompletedAtAttribute(): ?string
     {
         return $this->completed_at ? $this->completed_at->format('M d, Y H:i') : null;
     }
@@ -319,5 +351,75 @@ class CampaignTimeline extends Model
     public function getFormattedDelayNotifiedAtAttribute(): string
     {
         return $this->delay_notified_at ? $this->delay_notified_at->format('M d, Y H:i') : null;
+    }
+
+    // Accessor methods for computed properties
+    public function getCanUploadFileAttribute(): bool
+    {
+        return $this->isPending() && in_array($this->milestone_type, ['script_submission', 'video_submission']);
+    }
+
+    public function getCanBeApprovedAttribute(): bool
+    {
+        return $this->isPending() && $this->file_path;
+    }
+
+    public function getCanRequestApprovalAttribute(): bool
+    {
+        return $this->isPending() && in_array($this->milestone_type, ['script_approval', 'final_approval']);
+    }
+
+    public function getCanJustifyDelayAttribute(): bool
+    {
+        return $this->isDelayed() && !$this->justification;
+    }
+
+    public function getCanBeExtendedAttribute(): bool
+    {
+        try {
+            return $this->contract && $this->contract->brand_id === (auth()->id() ?? 0);
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    public function getIsExtendedAttribute(): bool
+    {
+        return $this->extension_days > 0;
+    }
+
+    public function getTotalExtensionDaysAttribute(): int
+    {
+        return $this->extension_days ?? 0;
+    }
+
+    public function getDaysUntilDeadlineAttribute(): int
+    {
+        return $this->getDaysUntilDeadline();
+    }
+
+    public function getDaysOverdueAttribute(): int
+    {
+        return $this->getDaysOverdue();
+    }
+
+    public function getIsOverdueAttribute(): bool
+    {
+        return $this->isOverdue();
+    }
+
+    public function getStatusIconAttribute(): string
+    {
+        return $this->getStatusIcon();
+    }
+
+    public function getMilestoneIconAttribute(): string
+    {
+        return $this->getMilestoneIcon();
+    }
+
+    public function getStatusColorAttribute(): string
+    {
+        return $this->getStatusColor();
     }
 } 

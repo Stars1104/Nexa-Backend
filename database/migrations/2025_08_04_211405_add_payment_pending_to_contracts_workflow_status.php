@@ -18,11 +18,12 @@ return new class extends Migration
         });
 
         Schema::table('contracts', function (Blueprint $table) {
-            // Recreate with new enum values including payment_pending
+            // Recreate with new enum values including payment_pending and payment_failed
             $table->enum('workflow_status', [
                 'active',
                 'waiting_review', 
                 'payment_pending',
+                'payment_failed',
                 'payment_available',
                 'payment_withdrawn',
                 'terminated'
@@ -45,6 +46,7 @@ return new class extends Migration
             $table->enum('workflow_status', [
                 'active',
                 'waiting_review', 
+                'payment_pending',
                 'payment_available',
                 'payment_withdrawn',
                 'terminated'

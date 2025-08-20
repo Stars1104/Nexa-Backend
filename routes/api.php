@@ -28,6 +28,7 @@ use App\Http\Controllers\BrandPaymentController;
 use App\Http\Controllers\CampaignTimelineController;
 use App\Http\Controllers\ContractPaymentController;
 use App\Http\Controllers\GuideController;
+use App\Http\Controllers\DeliveryMaterialController;
 use App\Http\Controllers\Admin\BrandRankingController;
 use App\Http\Controllers\SubscriptionController;
 
@@ -41,6 +42,7 @@ Route::get('/health', function () {
 });
 
 // Include auth routes FIRST to ensure they take priority
+// Note: Auth routes have their own rate limiting middleware
 require __DIR__.'/auth.php';
 
 // File download route with CORS headers
@@ -69,13 +71,13 @@ Route::get('/download/{path}', function ($path) {
 Route::get('/guides', [GuideController::class, 'index']);                 // Get all guides
 Route::get('/guides/{guide}', [GuideController::class, 'show']);          // Get a single guide by ID
 
-// User status check (requires authentication)
+// User status check (requires authentication) - with specific rate limiting
 Route::middleware(['auth:sanctum', 'throttle:user-status'])->get('/user', function (Request $request) {
     return $request->user();
 });
 
-// Authenticated user routes
-Route::middleware(['auth:sanctum'])->group(function () {
+// Authenticated user routes - with global API rate limiting
+Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     
     // Profile management
     Route::prefix('profile')->group(function () {
@@ -209,6 +211,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/creators/{creatorId}/profile', [PortfolioController::class, 'getCreatorProfile'])->where('creatorId', '[0-9]+');
 });
 
+// Public subscription plans (no authentication required)
+Route::get('/subscription/plans', [SubscriptionController::class, 'getPlans']);
+
 // Payment routes
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/payment/methods', [PaymentController::class, 'getPaymentMethods']);
@@ -224,9 +229,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
     
     // Subscription management routes
-    Route::get('/subscription/plans', [SubscriptionController::class, 'getPlans']);
     Route::get('/subscription/history', [SubscriptionController::class, 'getSubscriptionHistory']);
     Route::post('/subscription/cancel', [SubscriptionController::class, 'cancelSubscription']);
+    
+    // Payment transaction history (requires authentication)
     Route::get('/payment/transactions', [PaymentController::class, 'getTransactionHistory']);
     
     // Freelancer payment routes
@@ -291,12 +297,24 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/create-milestones', [CampaignTimelineController::class, 'createMilestones']); // Create milestones for contract
         Route::post('/upload-file', [CampaignTimelineController::class, 'uploadFile']); // Upload file for milestone
         Route::post('/approve-milestone', [CampaignTimelineController::class, 'approveMilestone']); // Approve milestone
+        Route::post('/reject-milestone', [CampaignTimelineController::class, 'rejectMilestone']); // Reject milestone
         Route::post('/complete-milestone', [CampaignTimelineController::class, 'completeMilestone']); // Complete milestone
         Route::post('/justify-delay', [CampaignTimelineController::class, 'justifyDelay']); // Justify delay
         Route::post('/mark-delayed', [CampaignTimelineController::class, 'markAsDelayed']); // Mark as delayed
         Route::post('/extend-timeline', [CampaignTimelineController::class, 'extendTimeline']); // Extend timeline
         Route::get('/download-file', [CampaignTimelineController::class, 'downloadFile']); // Download file
         Route::get('/statistics', [CampaignTimelineController::class, 'getStatistics']); // Get timeline statistics
+        Route::post('/check-delay-warnings', [CampaignTimelineController::class, 'checkAndSendDelayWarnings']); // Check and send delay warnings
+    });
+    
+    // Delivery Material routes
+    Route::prefix('delivery-materials')->group(function () {
+        Route::get('/', [DeliveryMaterialController::class, 'index']); // Get delivery materials for contract
+        Route::post('/', [DeliveryMaterialController::class, 'store']); // Submit delivery material
+        Route::post('/{material}/approve', [DeliveryMaterialController::class, 'approve'])->where('material', '[0-9]+'); // Approve delivery material
+        Route::post('/{material}/reject', [DeliveryMaterialController::class, 'reject'])->where('material', '[0-9]+'); // Reject delivery material
+        Route::get('/{material}/download', [DeliveryMaterialController::class, 'download'])->where('material', '[0-9]+'); // Download delivery material
+        Route::get('/statistics', [DeliveryMaterialController::class, 'getStatistics']); // Get delivery material statistics
     });
     
     // Review routes
@@ -381,8 +399,6 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/brand-rankings/comprehensive', [BrandRankingController::class, 'getComprehensiveRankings']);
 });
 
-
-
 // Google OAuth routes
 Route::get('/google/redirect', [GoogleController::class, 'redirectToGoogle'])
     ->name('google.redirect');
@@ -390,11 +406,7 @@ Route::get('/google/redirect', [GoogleController::class, 'redirectToGoogle'])
 Route::get('/google/callback', [GoogleController::class, 'handleGoogleCallback'])
     ->name('google.callback');
 
-
-
 Route::post('/google/auth', [GoogleController::class, 'handleGoogleWithRole'])
     ->name('google.auth');
-
-
 
 // Auth routes already included at the top

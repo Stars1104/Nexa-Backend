@@ -12,6 +12,7 @@ use App\Models\CampaignApplication;
 use App\Models\Portfolio;
 use App\Models\PortfolioItem;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class NotificationService
 {
@@ -888,6 +889,326 @@ class NotificationService
             Log::error('Failed to notify creator of payment pending', [
                 'contract_id' => $contract->id,
                 'creator_id' => $contract->creator_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Notify brand of new delivery material
+     */
+    public static function notifyBrandOfNewDeliveryMaterial($material): void
+    {
+        try {
+            $notification = Notification::create([
+                'user_id' => $material->brand_id,
+                'type' => 'new_delivery_material',
+                'title' => 'Novo Material de Entrega',
+                'message' => "O criador {$material->creator->name} enviou um novo material para o contrato '{$material->contract->title}'.",
+                'data' => [
+                    'material_id' => $material->id,
+                    'contract_id' => $material->contract_id,
+                    'contract_title' => $material->contract->title,
+                    'creator_name' => $material->creator->name,
+                    'file_name' => $material->file_name,
+                    'media_type' => $material->media_type,
+                    'submitted_at' => $material->submitted_at->toISOString(),
+                ],
+                'read_at' => null,
+            ]);
+
+            self::sendSocketNotification($material->brand_id, $notification);
+        } catch (\Exception $e) {
+            Log::error('Failed to notify brand of new delivery material', [
+                'material_id' => $material->id,
+                'brand_id' => $material->brand_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Notify creator of delivery material approval
+     */
+    public static function notifyCreatorOfDeliveryMaterialApproval($material): void
+    {
+        try {
+            $notification = Notification::create([
+                'user_id' => $material->creator_id,
+                'type' => 'delivery_material_approved',
+                'title' => 'Material Aprovado',
+                'message' => "Seu material '{$material->file_name}' foi aprovado para o contrato '{$material->contract->title}'.",
+                'data' => [
+                    'material_id' => $material->id,
+                    'contract_id' => $material->contract_id,
+                    'contract_title' => $material->contract->title,
+                    'brand_name' => $material->brand->name,
+                    'file_name' => $material->file_name,
+                    'approved_at' => $material->reviewed_at->toISOString(),
+                    'comment' => $material->comment,
+                ],
+                'read_at' => null,
+            ]);
+
+            self::sendSocketNotification($material->creator_id, $notification);
+
+            // Send email notification
+            try {
+                $material->load(['contract', 'creator', 'brand']);
+                Mail::to($material->creator->email)->send(new \App\Mail\DeliveryMaterialApproved($material));
+            } catch (\Exception $emailError) {
+                Log::error('Failed to send delivery material approval email', [
+                    'material_id' => $material->id,
+                    'creator_email' => $material->creator->email,
+                    'error' => $emailError->getMessage()
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to notify creator of delivery material approval', [
+                'material_id' => $material->id,
+                'creator_id' => $material->creator_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Notify creator of delivery material rejection
+     */
+    public static function notifyCreatorOfDeliveryMaterialRejection($material): void
+    {
+        try {
+            $notification = Notification::create([
+                'user_id' => $material->creator_id,
+                'type' => 'delivery_material_rejected',
+                'title' => 'Material Rejeitado',
+                'message' => "Seu material '{$material->file_name}' foi rejeitado para o contrato '{$material->contract_id}'.",
+                'data' => [
+                    'material_id' => $material->id,
+                    'contract_id' => $material->contract_id,
+                    'contract_title' => $material->contract->title,
+                    'brand_name' => $material->brand->name,
+                    'file_name' => $material->file_name,
+                    'rejected_at' => $material->reviewed_at->toISOString(),
+                    'rejection_reason' => $material->rejection_reason,
+                    'comment' => $material->comment,
+                ],
+                'read_at' => null,
+            ]);
+
+            self::sendSocketNotification($material->creator_id, $notification);
+
+            // Send email notification
+            try {
+                $material->load(['contract', 'creator', 'brand']);
+                Mail::to($material->creator->email)->send(new \App\Mail\DeliveryMaterialRejected($material));
+            } catch (\Exception $emailError) {
+                Log::error('Failed to send delivery material rejection email', [
+                    'material_id' => $material->id,
+                    'creator_email' => $material->creator->email,
+                    'error' => $emailError->getMessage()
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to notify creator of delivery material rejection', [
+                'material_id' => $material->id,
+                'creator_id' => $material->creator_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Notify brand of delivery material approval/rejection action
+     */
+    public static function notifyBrandOfDeliveryMaterialAction($material, $action): void
+    {
+        try {
+            $actionText = $action === 'approved' ? 'aprovou' : 'rejeitou';
+            $actionTitle = $action === 'approved' ? 'Material Aprovado' : 'Material Rejeitado';
+            
+            $notification = Notification::create([
+                'user_id' => $material->brand_id,
+                'type' => 'delivery_material_action',
+                'title' => $actionTitle,
+                'message' => "Você {$actionText} o material '{$material->file_name}' do criador {$material->creator->name} para o contrato '{$material->contract->title}'.",
+                'data' => [
+                    'material_id' => $material->id,
+                    'contract_id' => $material->contract_id,
+                    'contract_title' => $material->contract->title,
+                    'creator_name' => $material->creator->name,
+                    'file_name' => $material->file_name,
+                    'media_type' => $material->media_type,
+                    'action' => $action,
+                    'action_at' => $material->reviewed_at->toISOString(),
+                    'comment' => $material->comment,
+                    'rejection_reason' => $material->rejection_reason,
+                ],
+                'read_at' => null,
+            ]);
+
+            self::sendSocketNotification($material->brand_id, $notification);
+
+            // Send email notification to brand
+            try {
+                $material->load(['contract', 'creator', 'brand']);
+                if ($action === 'approved') {
+                    Mail::to($material->brand->email)->send(new \App\Mail\DeliveryMaterialApproved($material));
+                } else {
+                    Mail::to($material->brand->email)->send(new \App\Mail\DeliveryMaterialRejected($material));
+                }
+            } catch (\Exception $emailError) {
+                Log::error('Failed to send delivery material action email to brand', [
+                    'material_id' => $material->id,
+                    'brand_email' => $material->brand->email,
+                    'action' => $action,
+                    'error' => $emailError->getMessage()
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to notify brand of delivery material action', [
+                'material_id' => $material->id,
+                'brand_id' => $material->brand_id,
+                'action' => $action,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Notify creator of milestone approval
+     */
+    public static function notifyCreatorOfMilestoneApproval($milestone): void
+    {
+        try {
+            $milestone->load(['contract.creator', 'contract.brand']);
+            
+            $notification = Notification::create([
+                'user_id' => $milestone->contract->creator_id,
+                'type' => 'milestone_approved',
+                'title' => 'Milestone Aprovado',
+                'message' => "O milestone '{$milestone->title}' foi aprovado para o contrato '{$milestone->contract->title}'.",
+                'data' => [
+                    'milestone_id' => $milestone->id,
+                    'contract_id' => $milestone->contract_id,
+                    'contract_title' => $milestone->contract->title,
+                    'brand_name' => $milestone->contract->brand->name,
+                    'milestone_type' => $milestone->milestone_type,
+                    'approved_at' => now()->toISOString(),
+                    'comment' => $milestone->comment,
+                ],
+                'read_at' => null,
+            ]);
+
+            self::sendSocketNotification($milestone->contract->creator_id, $notification);
+
+            // Send email notification
+            try {
+                Mail::to($milestone->contract->creator->email)->send(new \App\Mail\MilestoneApproved($milestone));
+            } catch (\Exception $emailError) {
+                Log::error('Failed to send milestone approval email', [
+                    'milestone_id' => $milestone->id,
+                    'creator_email' => $milestone->contract->creator->email,
+                    'error' => $emailError->getMessage()
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to notify creator of milestone approval', [
+                'milestone_id' => $milestone->id,
+                'creator_id' => $milestone->contract->creator_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Notify creator of milestone rejection
+     */
+    public static function notifyCreatorOfMilestoneRejection($milestone): void
+    {
+        try {
+            $milestone->load(['contract.creator', 'contract.brand']);
+            
+            $notification = Notification::create([
+                'user_id' => $milestone->contract->creator_id,
+                'type' => 'milestone_rejected',
+                'title' => 'Milestone Rejeitado',
+                'message' => "O milestone '{$milestone->title}' foi rejeitado para o contrato '{$milestone->contract->title}'.",
+                'data' => [
+                    'milestone_id' => $milestone->id,
+                    'contract_id' => $milestone->contract_id,
+                    'contract_title' => $milestone->contract->title,
+                    'brand_name' => $milestone->contract->brand->name,
+                    'milestone_type' => $milestone->milestone_type,
+                    'rejected_at' => now()->toISOString(),
+                    'comment' => $milestone->comment,
+                ],
+                'read_at' => null,
+            ]);
+
+            self::sendSocketNotification($milestone->contract->creator_id, $notification);
+
+            // Send email notification
+            try {
+                Mail::to($milestone->contract->creator->email)->send(new \App\Mail\MilestoneRejected($milestone));
+            } catch (\Exception $emailError) {
+                Log::error('Failed to send milestone rejection email', [
+                    'milestone_id' => $milestone->id,
+                    'creator_email' => $milestone->contract->creator->email,
+                    'error' => $emailError->getMessage()
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to notify creator of milestone rejection', [
+                'milestone_id' => $milestone->id,
+                'creator_id' => $milestone->contract->creator_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Notify creator of milestone delay warning
+     */
+    public static function notifyCreatorOfMilestoneDelay($milestone): void
+    {
+        try {
+            $milestone->load(['contract.creator', 'contract.brand']);
+            
+            $notification = Notification::create([
+                'user_id' => $milestone->contract->creator_id,
+                'type' => 'milestone_delay_warning',
+                'title' => 'Aviso de Atraso - Milestone',
+                'message' => "⚠️ O milestone '{$milestone->title}' está atrasado. Justifique o atraso para evitar penalidades de 7 dias sem novos convites.",
+                'data' => [
+                    'milestone_id' => $milestone->id,
+                    'contract_id' => $milestone->contract_id,
+                    'contract_title' => $milestone->contract->title,
+                    'brand_name' => $milestone->contract->brand->name,
+                    'milestone_type' => $milestone->milestone_type,
+                    'deadline' => $milestone->deadline->toISOString(),
+                    'days_overdue' => $milestone->getDaysOverdue(),
+                    'warning_sent_at' => now()->toISOString(),
+                ],
+                'read_at' => null,
+            ]);
+
+            self::sendSocketNotification($milestone->contract->creator_id, $notification);
+
+            // Send email notification
+            try {
+                Mail::to($milestone->contract->creator->email)->send(new \App\Mail\MilestoneDelayWarning($milestone));
+            } catch (\Exception $emailError) {
+                Log::error('Failed to send milestone delay warning email', [
+                    'milestone_id' => $milestone->id,
+                    'creator_email' => $milestone->contract->creator->email,
+                    'error' => $emailError->getMessage()
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to notify creator of milestone delay warning', [
+                'milestone_id' => $milestone->id,
+                'creator_id' => $milestone->contract->creator_id,
                 'error' => $e->getMessage()
             ]);
         }

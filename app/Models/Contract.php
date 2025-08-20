@@ -90,6 +90,11 @@ class Contract extends Model
         return $this->hasMany(CampaignTimeline::class);
     }
 
+    public function deliveryMaterials(): HasMany
+    {
+        return $this->hasMany(DeliveryMaterial::class);
+    }
+
     // Scopes
     public function scopeActive($query)
     {

@@ -154,56 +154,89 @@ class Offer extends Model
             return false;
         }
 
-        $this->update([
-            'status' => 'accepted',
-            'accepted_at' => now(),
-        ]);
+        try {
+            // Start a database transaction
+            \Illuminate\Support\Facades\DB::beginTransaction();
 
-        // Calculate platform fee (10%) and creator amount (90%)
-        $platformFee = $this->budget * 0.10;
-        $creatorAmount = $this->budget * 0.90;
-
-        // Create contract
-        $contract = Contract::create([
-            'offer_id' => $this->id,
-            'brand_id' => $this->brand_id,
-            'creator_id' => $this->creator_id,
-            'title' => $this->title ?? 'Contrato de Projeto',
-            'description' => $this->description ?? 'Contrato criado a partir de oferta',
-            'budget' => $this->budget,
-            'platform_fee' => $platformFee,
-            'creator_amount' => $creatorAmount,
-            'estimated_days' => $this->estimated_days,
-            'requirements' => $this->requirements ?? [],
-            'started_at' => now(),
-            'expected_completion_at' => now()->addDays($this->estimated_days),
-            'status' => 'pending', // Set to pending until payment is processed
-            'workflow_status' => 'payment_pending',
-        ]);
-
-        // Process automatic payment
-        $paymentService = new \App\Services\AutomaticPaymentService();
-        $paymentResult = $paymentService->processContractPayment($contract);
-
-        if (!$paymentResult['success']) {
-            // If payment fails, update contract status
-            $contract->update([
-                'status' => 'payment_failed',
-                'workflow_status' => 'payment_failed',
+            $this->update([
+                'status' => 'accepted',
+                'accepted_at' => now(),
             ]);
 
-            // Log the payment failure
-            \Illuminate\Support\Facades\Log::error('Automatic payment failed for contract', [
-                'contract_id' => $contract->id,
+            // Calculate platform fee (10%) and creator amount (90%)
+            $platformFee = $this->budget * 0.10;
+            $creatorAmount = $this->budget * 0.90;
+
+            // Create contract with better error handling
+            $contract = Contract::create([
                 'offer_id' => $this->id,
-                'error' => $paymentResult['message'],
+                'brand_id' => $this->brand_id,
+                'creator_id' => $this->creator_id,
+                'title' => $this->title ?? 'Contrato de Projeto',
+                'description' => $this->description ?? 'Contrato criado a partir de oferta',
+                'budget' => $this->budget,
+                'platform_fee' => $platformFee,
+                'creator_amount' => $creatorAmount,
+                'estimated_days' => $this->estimated_days,
+                'requirements' => $this->requirements ?? [],
+                'started_at' => now(),
+                'expected_completion_at' => now()->addDays($this->estimated_days),
+                'status' => 'pending', // Set to pending until payment is processed
+                'workflow_status' => 'payment_pending',
             ]);
+
+            if (!$contract) {
+                throw new \Exception('Failed to create contract');
+            }
+
+            // Process automatic payment
+            $paymentService = new \App\Services\AutomaticPaymentService();
+            $paymentResult = $paymentService->processContractPayment($contract);
+
+            if (!$paymentResult['success']) {
+                // If payment fails, update contract status
+                $contract->update([
+                    'status' => 'payment_failed',
+                    'workflow_status' => 'payment_failed',
+                ]);
+
+                // Log the payment failure
+                \Illuminate\Support\Facades\Log::error('Automatic payment failed for contract', [
+                    'contract_id' => $contract->id,
+                    'offer_id' => $this->id,
+                    'error' => $paymentResult['message'],
+                ]);
+            }
+
+            // Commit the transaction
+            \Illuminate\Support\Facades\DB::commit();
+
+            // Notify brand about acceptance
+            NotificationService::notifyUserOfOfferAccepted($this);
+
+            return true;
+
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            \Illuminate\Support\Facades\DB::rollBack();
+
+            // Log the error
+            \Illuminate\Support\Facades\Log::error('Error accepting offer', [
+                'offer_id' => $this->id,
+                'brand_id' => $this->brand_id,
+                'creator_id' => $this->creator_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            // Revert offer status
+            $this->update([
+                'status' => 'pending',
+                'accepted_at' => null,
+            ]);
+
+            return false;
         }
-
-        // Notify brand about acceptance
-        NotificationService::notifyUserOfOfferAccepted($this);
-
-        return true;
     }
 
     public function reject(string $reason = null): bool

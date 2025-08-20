@@ -45,14 +45,14 @@ class OfferController extends Controller
             ], 403);
         }
 
-        // Check if brand has active payment methods
-        if (!$user->hasActivePaymentMethods()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'You must register a payment method before sending offers. Please add a credit card in your payment settings.',
-                'error_code' => 'NO_PAYMENT_METHOD',
-            ], 400);
-        }
+        // Check if brand has active payment methods - TEMPORARILY DISABLED due to Pagar.me API issues
+        // if (!$user->hasActivePaymentMethods()) {
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => 'You must register a payment method before sending offers. Please add a credit card in your payment settings.',
+        //         'error_code' => 'NO_PAYMENT_METHOD',
+        //     ], 400);
+        // }
 
         // Check if creator exists and is a creator
         $creator = User::find($request->creator_id);
@@ -371,15 +371,32 @@ class OfferController extends Controller
         }
 
         try {
+            Log::info('Attempting to accept offer', [
+                'user_id' => $user->id,
+                'offer_id' => $id,
+                'user_role' => $user->role,
+            ]);
+
             $offer = Offer::where('creator_id', $user->id)
                 ->find($id);
 
             if (!$offer) {
+                Log::warning('Offer not found for acceptance', [
+                    'user_id' => $user->id,
+                    'offer_id' => $id,
+                ]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Offer not found',
                 ], 404);
             }
+
+            Log::info('Offer found for acceptance', [
+                'offer_id' => $offer->id,
+                'offer_status' => $offer->status,
+                'offer_expires_at' => $offer->expires_at,
+                'can_be_accepted' => $offer->canBeAccepted(),
+            ]);
 
             // Check if offer is already accepted
             if ($offer->status === 'accepted') {
@@ -414,11 +431,23 @@ class OfferController extends Controller
             }
 
             if (!$offer->canBeAccepted()) {
+                Log::warning('Offer cannot be accepted', [
+                    'offer_id' => $offer->id,
+                    'status' => $offer->status,
+                    'expires_at' => $offer->expires_at,
+                    'is_expired' => $offer->isExpired(),
+                ]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Offer cannot be accepted (expired or already processed)',
                 ], 400);
             }
+
+            Log::info('Attempting to accept offer in model', [
+                'offer_id' => $offer->id,
+                'brand_id' => $offer->brand_id,
+                'creator_id' => $offer->creator_id,
+            ]);
 
             if ($offer->accept()) {
                 // Get the chat room
@@ -427,6 +456,12 @@ class OfferController extends Controller
                 if ($chatRoom) {
                     // Get the created contract
                     $contract = $offer->contract;
+                    
+                    Log::info('Contract created successfully', [
+                        'contract_id' => $contract->id ?? 'null',
+                        'contract_status' => $contract->status ?? 'null',
+                        'workflow_status' => $contract->workflow_status ?? 'null',
+                    ]);
                     
                     // Create chat message for offer acceptance
                     $this->createOfferChatMessage($chatRoom, 'offer_accepted', [
@@ -442,7 +477,7 @@ class OfferController extends Controller
                             'status' => $offer->status,
                             'contract_id' => $contract->id ?? null,
                             'contract_status' => $contract->status ?? null,
-                            'can_be_completed' => $contract->canBeCompleted(),
+                            'can_be_completed' => $contract ? $contract->canBeCompleted() : false,
                             'sender' => [
                                 'id' => $user->id,
                                 'name' => $user->name,
@@ -484,6 +519,7 @@ class OfferController extends Controller
                     'offer_id' => $offer->id,
                     'creator_id' => $user->id,
                     'brand_id' => $offer->brand_id,
+                    'contract_id' => $offer->contract->id ?? 'null',
                 ]);
 
                 return response()->json([
@@ -491,14 +527,18 @@ class OfferController extends Controller
                     'message' => 'Offer accepted successfully! Contract has been created.',
                     'data' => [
                         'offer_id' => $offer->id,
-                        'contract_id' => $offer->contract->id,
+                        'contract_id' => $offer->contract->id ?? null,
                         'status' => $offer->status,
                     ],
                 ]);
             } else {
+                Log::error('Failed to accept offer in model', [
+                    'offer_id' => $offer->id,
+                    'user_id' => $user->id,
+                ]);
                 return response()->json([
                     'success' => false,
-                    'message' => 'Failed to accept offer',
+                    'message' => 'Failed to accept offer. Please try again.',
                 ], 500);
             }
 
@@ -507,6 +547,7 @@ class OfferController extends Controller
                 'user_id' => $user->id,
                 'offer_id' => $id,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
