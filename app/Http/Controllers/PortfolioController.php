@@ -461,7 +461,7 @@ class PortfolioController extends Controller
             // Find the creator
             $creator = User::where('id', $creatorId)
                 ->where('role', 'creator')
-                ->with(['portfolio.items', 'receivedReviews.brand'])
+                ->with(['portfolio.items', 'receivedReviews.contract.brand'])
                 ->first();
 
             if (!$creator) {
@@ -476,7 +476,7 @@ class PortfolioController extends Controller
             
             // Get reviews
             $reviews = $creator->receivedReviews()
-                ->with('brand:id,name')
+                ->with('contract.brand:id,name')
                 ->orderBy('created_at', 'desc')
                 ->get();
 
@@ -524,7 +524,7 @@ class PortfolioController extends Controller
                 'reviews' => $reviews->map(function ($review) {
                     return [
                         'id' => $review->id,
-                        'brand_name' => $review->brand->name ?? 'Unknown Brand',
+                        'brand_name' => $review->contract && $review->contract->brand ? $review->contract->brand->name : 'Unknown Brand',
                         'rating' => $review->rating,
                         'comment' => $review->comment,
                         'created_at' => $review->created_at,

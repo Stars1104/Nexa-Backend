@@ -77,6 +77,37 @@ class CampaignController extends Controller
                 $query->where('deadline', '<=', $request->deadline_to);
             }
 
+            // Apply creator filters for creators
+            if ($user->isCreator()) {
+                $creator = $user;
+                
+                // Filter by creator type
+                if ($creator->creator_type) {
+                    $query->whereJsonContains('target_creator_types', $creator->creator_type);
+                }
+                
+                // Filter by age range
+                if ($creator->birth_date) {
+                    $age = $creator->age;
+                    $query->where(function($q) use ($age) {
+                        $q->whereNull('min_age')
+                          ->orWhere('min_age', '<=', $age);
+                    })->where(function($q) use ($age) {
+                        $q->whereNull('max_age')
+                          ->orWhere('max_age', '>=', $age);
+                    });
+                }
+                
+                // Filter by gender
+                if ($creator->gender) {
+                    $query->where(function($q) use ($creator) {
+                        $q->whereNull('target_genders')
+                          ->orWhereJsonLength('target_genders', 0)
+                          ->orWhereJsonContains('target_genders', $creator->gender);
+                    });
+                }
+            }
+
             // Search functionality
             if ($request->has('search')) {
                 $search = $request->search;
@@ -98,16 +129,8 @@ class CampaignController extends Controller
 
             // Add favorite status for creators
             if ($user->isCreator()) {
-                $campaignIds = $campaigns->pluck('id');
-                $favorites = CampaignFavorite::where('creator_id', $user->id)
-                    ->whereIn('campaign_id', $campaignIds)
-                    ->pluck('campaign_id')
-                    ->toArray();
-
-                $campaigns->getCollection()->transform(function ($campaign) use ($favorites) {
-                    $campaign->is_favorited = in_array($campaign->id, $favorites);
-                    return $campaign;
-                });
+                // The is_favorited attribute is now automatically handled by the model
+                // No need to manually set it here
             }
 
             return response()->json([
@@ -389,6 +412,12 @@ class CampaignController extends Controller
             $perPage = min($request->get('per_page', 15), 100);
             $campaigns = $query->paginate($perPage);
 
+            // Add favorite status for creators
+            if ($user->isCreator()) {
+                // The is_favorited attribute is now automatically handled by the model
+                // No need to manually set it here
+            }
+
             // Log campaigns data for debugging
             Log::info('Campaigns retrieved', [
                 'status' => $status,
@@ -450,6 +479,29 @@ class CampaignController extends Controller
             // Ensure target_states is always an array
             if (!isset($data['target_states']) || !is_array($data['target_states'])) {
                 $data['target_states'] = [];
+            }
+
+            // Validate age range
+            if (isset($data['min_age']) && isset($data['max_age']) && $data['min_age'] > $data['max_age']) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Invalid age range',
+                    'message' => 'Minimum age cannot be greater than maximum age'
+                ], 422);
+            }
+
+            // Ensure target_genders is always an array
+            if (!isset($data['target_genders']) || !is_array($data['target_genders'])) {
+                $data['target_genders'] = [];
+            }
+
+            // Ensure target_creator_types is always an array and has at least one value
+            if (!isset($data['target_creator_types']) || !is_array($data['target_creator_types']) || empty($data['target_creator_types'])) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Creator type required',
+                    'message' => 'At least one creator type must be selected'
+                ], 422);
             }
 
             // Handle file uploads

@@ -193,7 +193,7 @@ class Contract extends Model
      */
     public function isWaitingForReview(): bool
     {
-        return $this->status === 'completed' && $this->workflow_status === 'waiting_creator_review';
+        return $this->status === 'completed' && $this->workflow_status === 'waiting_review';
     }
 
     /**
@@ -269,7 +269,7 @@ class Contract extends Model
     public function processPaymentAfterReview(): bool
     {
         // Only process payment for completed contracts where creator has reviewed the brand
-        if ($this->status !== 'completed' || $this->workflow_status !== 'waiting_creator_review') {
+        if ($this->status !== 'completed' || $this->workflow_status !== 'waiting_review') {
             return false;
         }
 
@@ -395,19 +395,16 @@ class Contract extends Model
             'platform_fee' => $platformFee,
             'creator_amount' => $creatorAmount,
             'payment_method' => 'platform_escrow',
-            'status' => 'pending_release', // Payment is pending until creator reviews
+            'status' => 'pending', // Payment is pending until creator reviews
         ]);
 
         $this->update([
             'status' => 'completed',
             'completed_at' => now(),
-            'workflow_status' => 'waiting_creator_review', // Waiting for creator to review brand
+            'workflow_status' => 'waiting_review', // Waiting for creator to review brand
             'platform_fee' => $platformFee,
             'creator_amount' => $creatorAmount,
         ]);
-
-        // Send chat message to inform both parties about contract completion
-        $this->sendContractCompletionMessage();
 
         // Notify brand that review is required
         NotificationService::notifyBrandOfReviewRequired($this);
@@ -421,50 +418,51 @@ class Contract extends Model
     /**
      * Send chat message about contract completion
      */
-    private function sendContractCompletionMessage(): void
-    {
-        try {
-            // Get the chat room for this contract
-            $chatRoom = \App\Models\ChatRoom::whereHas('offers', function ($query) {
-                $query->where('id', $this->offer_id);
-            })->first();
+    // private function sendContractCompletionMessage(): void
+    // {
+    //     try {
+    //         // Get the chat room for this contract
+    //         $chatRoom = \App\Models\ChatRoom::whereHas('offers', function ($query) {
+    //             $query->where('id', $this->offer_id);
+    //         })->first();
 
-            if ($chatRoom) {
-                // Message for brand asking for review
-                $brandReviewMessage = "🎉 Campaign completed successfully!\n\n" .
-                    "The campaign has been finalized and the payment is ready to be released. " .
-                    "Please submit your review to complete the process and release the payment to the creator.\n\n" .
-                    "Your feedback helps maintain the quality of our platform and supports other users in making informed decisions.";
+    //         if ($chatRoom) {
+    //             // Message for brand asking for review
+    //             $brandReviewMessage = "🎉 Campanha finalizada com sucesso!\n\n" .
+    //                 "A campanha foi finalizada e o pagamento está pronto para ser liberado. " .
+    //                 "Por favor, envie sua avaliação para completar o processo e liberar o pagamento para o criador.\n\n" .
+    //                 "Seu feedback ajuda a manter a qualidade de nossa plataforma e apoia outros usuários a tomar decisões informadas.";
 
-                // Message for creator about payment release
-                $creatorPaymentMessage = "🎉 Campaign completed successfully!\n\n" .
-                    "The brand has finalized the campaign and the payment is ready to be released. " .
-                    "To receive your payment, please submit a review of the brand.\n\n" .
-                    "After both reviews are submitted, you will be able to withdraw your payment.";
+    //             // Message for creator about payment release
+    //             $creatorPaymentMessage = "🎉 Campanha finalizada com sucesso!\n\n" .
+    //                 "A marca finalizou a campanha e o pagamento está pronto para ser liberado. " .
+    //                 "Para receber seu pagamento, por favor, envie uma avaliação da marca.\n\n" .
+    //                 "Após ambas as avaliações serem enviadas, você poderá sacar seu pagamento.";
 
-                \App\Models\Message::create([
-                    'chat_room_id' => $chatRoom->id,
-                    'sender_id' => $this->brand_id,
-                    'message' => $brandReviewMessage,
-                    'message_type' => 'text',
-                    'is_system_message' => true,
-                ]);
+    //             // For system messages, use the creator's ID as sender to avoid potential foreign key issues
+    //             \App\Models\Message::create([
+    //                 'chat_room_id' => $chatRoom->id,
+    //                 'sender_id' => $this->creator_id,
+    //                 'message' => $brandReviewMessage,
+    //                 'message_type' => 'text',
+    //                 'is_system_message' => true,
+    //             ]);
 
-                \App\Models\Message::create([
-                    'chat_room_id' => $chatRoom->id,
-                    'sender_id' => $this->brand_id,
-                    'message' => $creatorPaymentMessage,
-                    'message_type' => 'text',
-                    'is_system_message' => true,
-                ]);
-            }
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Failed to send contract completion message', [
-                'contract_id' => $this->id,
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
+    //             \App\Models\Message::create([
+    //                 'chat_room_id' => $chatRoom->id,
+    //                 'sender_id' => $this->creator_id,
+    //                 'message' => $creatorPaymentMessage,
+    //                 'message_type' => 'text',
+    //                 'is_system_message' => true,
+    //             ]);
+    //         }
+    //     } catch (\Exception $e) {
+    //         \Illuminate\Support\Facades\Log::error('Failed to send contract completion message', [
+    //             'contract_id' => $this->id,
+    //             'error' => $e->getMessage()
+    //         ]);
+    //     }
+    // }
 
     public function cancel(string $reason = null): bool
     {

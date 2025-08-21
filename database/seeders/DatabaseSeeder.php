@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
         // Create subscription plans first
         $this->call([
             SubscriptionPlanSeeder::class,
+            WithdrawalMethodSeeder::class,
         ]);
 
         // Create various types of users for testing

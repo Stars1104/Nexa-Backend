@@ -17,6 +17,7 @@ class Campaign extends Model
         'title',
         'description',
         'budget',
+        'remuneration_type',
         'final_price',
         'location',
         'requirements',
@@ -32,12 +33,18 @@ class Campaign extends Model
         'approved_by',
         'rejection_reason',
         'max_bids',
+        'min_age',
+        'max_age',
+        'target_genders',
+        'target_creator_types',
         'is_active',
         'is_featured'
     ];
 
     protected $casts = [
         'target_states' => 'array',
+        'target_genders' => 'array',
+        'target_creator_types' => 'array',
         'deadline' => 'date',
         'approved_at' => 'datetime',
         'is_active' => 'boolean',
@@ -45,6 +52,8 @@ class Campaign extends Model
         'budget' => 'decimal:2',
         'final_price' => 'decimal:2',
     ];
+
+    protected $appends = ['is_favorited'];
 
     // Relationships
     public function brand(): BelongsTo
@@ -75,6 +84,25 @@ class Campaign extends Model
     public function isFavoritedBy($creatorId): bool
     {
         return $this->favorites()->where('creator_id', $creatorId)->exists();
+    }
+
+    /**
+     * Get the is_favorited attribute.
+     * This will be automatically called when the model is serialized to JSON.
+     */
+    public function getIsFavoritedAttribute(): bool
+    {
+        // If the attribute is already set (e.g., by the controller), return it
+        if (isset($this->attributes['is_favorited'])) {
+            return (bool) $this->attributes['is_favorited'];
+        }
+        
+        // Otherwise, check if the current user has favorited this campaign
+        if (auth()->check() && auth()->user()->isCreator()) {
+            return $this->isFavoritedBy(auth()->user()->id);
+        }
+        
+        return false;
     }
 
     // Scopes
@@ -111,6 +139,33 @@ class Campaign extends Model
     public function scopeFeatured($query)
     {
         return $query->where('is_featured', true);
+    }
+
+    public function scopeForAgeRange($query, $minAge = null, $maxAge = null)
+    {
+        if ($minAge !== null) {
+            $query->where('min_age', '<=', $minAge);
+        }
+        if ($maxAge !== null) {
+            $query->where('max_age', '>=', $maxAge);
+        }
+        return $query;
+    }
+
+    public function scopeForGender($query, $genders)
+    {
+        if (empty($genders)) {
+            return $query; // No gender preference
+        }
+        return $query->whereJsonOverlaps('target_genders', $genders);
+    }
+
+    public function scopeForCreatorType($query, $creatorTypes)
+    {
+        if (empty($creatorTypes)) {
+            return $query; // No creator type preference
+        }
+        return $query->whereJsonOverlaps('target_creator_types', $creatorTypes);
     }
 
     // Methods

@@ -27,6 +27,34 @@ class WithdrawalMethodSeeder extends Seeder
                 'field_config' => json_encode([]), // No additional configuration needed
                 'sort_order' => 1,
             ],
+            [
+                'code' => 'pix',
+                'name' => 'PIX',
+                'description' => 'Transferência instantânea via PIX para CPF/CNPJ',
+                'min_amount' => 5.00,
+                'max_amount' => 5000.00,
+                'processing_time' => 'Até 24 horas',
+                'fee' => 2.50,
+                'is_active' => true,
+                'required_fields' => json_encode(['pix_key', 'pix_key_type']),
+                'field_config' => json_encode([
+                    'pix_key_types' => ['cpf', 'cnpj', 'email', 'phone', 'random']
+                ]),
+                'sort_order' => 2,
+            ],
+            [
+                'code' => 'pagarme_account',
+                'name' => 'Conta Pagar.me',
+                'description' => 'Saque para conta Pagar.me (sem taxa)',
+                'min_amount' => 5.00,
+                'max_amount' => 5000.00,
+                'processing_time' => 'Até 24 horas',
+                'fee' => 0.00,
+                'is_active' => true,
+                'required_fields' => json_encode([]),
+                'field_config' => json_encode([]),
+                'sort_order' => 3,
+            ],
         ];
 
         foreach ($methods as $method) {

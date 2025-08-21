@@ -245,7 +245,7 @@ class ContractController extends Controller
             if (!$contract) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Contract not found or access denied',
+                    'message' => 'Contrato não encontrado ou acesso negado',
                 ], 404);
             }
 
@@ -453,14 +453,14 @@ class ContractController extends Controller
             if (!$contract) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Contract not found or cannot be activated',
+                    'message' => 'Contrato não encontrado ou não pode ser ativado',
                 ], 404);
             }
 
             if (!$contract->canBeStarted()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Contract cannot be activated',
+                    'message' => 'Contrato não pode ser ativado',
                 ], 400);
             }
 
@@ -509,7 +509,7 @@ class ContractController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Contract activated successfully!',
+                'message' => 'Contrato ativado com sucesso!',
                 'data' => [
                     'contract_id' => $contract->id,
                     'status' => $contract->status,
@@ -527,7 +527,7 @@ class ContractController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to activate contract. Please try again.',
+                'message' => 'Falha ao ativar contrato. Tente novamente.',
             ], 500);
         }
     }
@@ -543,7 +543,7 @@ class ContractController extends Controller
         if (!$user->isBrand()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only brands can complete contracts',
+                'message' => 'Apenas marcas podem finalizar contratos',
             ], 403);
         }
 
@@ -555,14 +555,14 @@ class ContractController extends Controller
             if (!$contract) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Contract not found or cannot be completed',
+                    'message' => 'Contrato não encontrado ou não pode ser finalizado',
                 ], 404);
             }
 
             if (!$contract->canBeCompleted()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Contract cannot be completed',
+                    'message' => 'Contrato não pode ser finalizado',
                 ], 400);
             }
 
@@ -605,7 +605,7 @@ class ContractController extends Controller
 
                 return response()->json([
                     'success' => true,
-                    'message' => 'Campaign completed successfully! Please submit a review to release payment to the creator.',
+                    'message' => 'Campanha finalizada com sucesso! Por favor, envie sua avaliação para liberar o pagamento para o criador.',
                     'data' => [
                         'contract_id' => $contract->id,
                         'status' => $contract->status,
@@ -617,7 +617,7 @@ class ContractController extends Controller
             } else {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Failed to complete campaign',
+                    'message' => 'Falha ao finalizar campanha',
                 ], 500);
             }
 
@@ -630,7 +630,7 @@ class ContractController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to complete campaign. Please try again.',
+                'message' => 'Falha ao finalizar campanha. Tente novamente.',
             ], 500);
         }
     }
@@ -647,7 +647,7 @@ class ContractController extends Controller
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Validation failed',
+                'message' => 'Validação falhou',
                 'errors' => $validator->errors(),
             ], 422);
         }
@@ -665,14 +665,14 @@ class ContractController extends Controller
             if (!$contract) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Contract not found or cannot be cancelled',
+                    'message' => 'Contrato não encontrado ou não pode ser cancelado',
                 ], 404);
             }
 
             if (!$contract->canBeCancelled()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Contract cannot be cancelled',
+                    'message' => 'Contrato não pode ser cancelado',
                 ], 400);
             }
 
@@ -685,7 +685,7 @@ class ContractController extends Controller
 
                 return response()->json([
                     'success' => true,
-                    'message' => 'Contract cancelled successfully',
+                    'message' => 'Contrato cancelado com sucesso',
                     'data' => [
                         'contract_id' => $contract->id,
                         'status' => $contract->status,
@@ -694,7 +694,7 @@ class ContractController extends Controller
             } else {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Failed to cancel contract',
+                    'message' => 'Falha ao cancelar contrato',
                 ], 500);
             }
 
@@ -707,7 +707,7 @@ class ContractController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to cancel contract. Please try again.',
+                'message' => 'Falha ao cancelar contrato. Tente novamente.',
             ], 500);
         }
     }
@@ -724,7 +724,7 @@ class ContractController extends Controller
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Validation failed',
+                'message' => 'Validação falhou',
                 'errors' => $validator->errors(),
             ], 422);
         }
@@ -735,7 +735,7 @@ class ContractController extends Controller
         if (!$user->isBrand()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only brands can terminate contracts',
+                'message' => 'Apenas marcas podem terminar contratos',
             ], 403);
         }
 
@@ -747,14 +747,14 @@ class ContractController extends Controller
             if (!$contract) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Contract not found or cannot be terminated',
+                    'message' => 'Contrato não encontrado ou não pode ser terminado',
                 ], 404);
             }
 
             if (!$contract->canBeTerminated()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Contract cannot be terminated',
+                    'message' => 'Contrato não pode ser terminado',
                 ], 400);
             }
 
@@ -785,7 +785,7 @@ class ContractController extends Controller
 
                 return response()->json([
                     'success' => true,
-                    'message' => 'Contract terminated successfully',
+                    'message' => 'Contrato terminado com sucesso',
                     'data' => [
                         'contract_id' => $contract->id,
                         'status' => $contract->status,
@@ -795,7 +795,7 @@ class ContractController extends Controller
             } else {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Failed to terminate contract',
+                    'message' => 'Falha ao terminar contrato',
                 ], 500);
             }
 
@@ -808,7 +808,7 @@ class ContractController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to terminate contract. Please try again.',
+                'message' => 'Falha ao terminar contrato. Tente novamente.',
             ], 500);
         }
     }
@@ -825,7 +825,7 @@ class ContractController extends Controller
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Validation failed',
+                'message' => 'Validação falhou',
                 'errors' => $validator->errors(),
             ], 422);
         }
@@ -843,7 +843,7 @@ class ContractController extends Controller
             if (!$contract) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Contract not found or cannot be disputed',
+                    'message' => 'Contrato não encontrado ou não pode ser disputado',
                 ], 404);
             }
 
@@ -856,7 +856,7 @@ class ContractController extends Controller
 
                 return response()->json([
                     'success' => true,
-                    'message' => 'Contract disputed successfully. Our team will review the case.',
+                    'message' => 'Contrato disputado com sucesso. Nossa equipe revisará o caso.',
                     'data' => [
                         'contract_id' => $contract->id,
                         'status' => $contract->status,
@@ -865,7 +865,7 @@ class ContractController extends Controller
             } else {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Failed to dispute contract',
+                    'message' => 'Falha ao disputar contrato',
                 ], 500);
             }
 
@@ -878,7 +878,7 @@ class ContractController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to dispute contract. Please try again.',
+                'message' => 'Falha ao disputar contrato. Tente novamente.',
             ], 500);
         }
     }

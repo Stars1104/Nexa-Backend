@@ -34,6 +34,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'student_verified',
         'student_expires_at',
         'gender',
+        'birth_date',
+        'creator_type',
         'state',
         'language',
         'has_premium',
@@ -80,6 +82,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'premium_expires_at' => 'datetime',
         'free_trial_expires_at' => 'datetime',
         'suspended_until' => 'datetime',
+        'birth_date' => 'date',
     ];
 
     // Relationships
@@ -259,6 +262,18 @@ class User extends Authenticatable implements MustVerifyEmail
         return str_repeat('★', $fullStars) . 
                ($halfStar ? '☆' : '') . 
                str_repeat('☆', $emptyStars);
+    }
+
+    /**
+     * Get user's age based on birth date
+     */
+    public function getAgeAttribute(): ?int
+    {
+        if (!$this->birth_date) {
+            return null;
+        }
+        
+        return $this->birth_date->diffInYears(now());
     }
 
     public function brandPayments(): HasMany

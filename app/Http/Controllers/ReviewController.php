@@ -122,9 +122,9 @@ class ReviewController extends Controller
             }
 
             // Check if both parties have reviewed and send NEXA review request
-            if ($contract->hasBothReviews()) {
-                $this->sendNexaReviewRequest($contract);
-            }
+            // if ($contract->hasBothReviews()) {
+            //     $this->sendNexaReviewRequest($contract);
+            // }
 
             Log::info('Review created successfully', [
                 'review_id' => $review->id,
@@ -538,45 +538,45 @@ class ReviewController extends Controller
     /**
      * Send NEXA review request message when both parties have reviewed
      */
-    private function sendNexaReviewRequest($contract): void
-    {
-        try {
-            $chatRoom = $contract->offer->chatRoom;
-            $brand = $contract->brand;
-            $creator = $contract->creator;
+    // private function sendNexaReviewRequest($contract): void
+    // {
+    //     try {
+    //         $chatRoom = $contract->offer->chatRoom;
+    //         $brand = $contract->brand;
+    //         $creator = $contract->creator;
 
-            // Message asking for NEXA review
-            $nexaReviewMessage = "🌟 Thank you for completing this campaign!\n\n" .
-                "Both parties have submitted their reviews and the payment has been processed successfully. " .
-                "We hope you had a great experience working together!\n\n" .
-                "To help us improve our platform and provide better service to all users, " .
-                "we would greatly appreciate if you could take a moment to review NEXA on your preferred platform:\n\n" .
-                "• Google Play Store\n" .
-                "• App Store\n" .
-                "• Trustpilot\n" .
-                "• Your social media channels\n\n" .
-                "Your feedback helps us grow and serve our community better. Thank you for being part of NEXA! 🚀";
+    //         // Message asking for NEXA review
+    //         $nexaReviewMessage = "🌟 Thank you for completing this campaign!\n\n" .
+    //             "Both parties have submitted their reviews and the payment has been processed successfully. " .
+    //             "We hope you had a great experience working together!\n\n" .
+    //             "To help us improve our platform and provide better service to all users, " .
+    //             "we would greatly appreciate if you could take a moment to review NEXA on your preferred platform:\n\n" .
+    //             "• Google Play Store\n" .
+    //             "• App Store\n" .
+    //             "• Trustpilot\n" .
+    //             "• Your social media channels\n\n" .
+    //             "Your feedback helps us grow and serve our community better. Thank you for being part of NEXA! 🚀";
 
-            \App\Models\Message::create([
-                'chat_room_id' => $chatRoom->id,
-                'sender_id' => $brand->id,
-                'message' => $nexaReviewMessage,
-                'message_type' => 'text',
-                'is_system_message' => true,
-            ]);
+    //         \App\Models\Message::create([
+    //             'chat_room_id' => $chatRoom->id,
+    //             'sender_id' => $brand->id,
+    //             'message' => $nexaReviewMessage,
+    //             'message_type' => 'text',
+    //             'is_system_message' => true,
+    //         ]);
 
-            Log::info('NEXA review request sent successfully', [
-                'contract_id' => $contract->id,
-                'chat_room_id' => $chatRoom->id,
-                'brand_id' => $brand->id,
-                'creator_id' => $creator->id,
-            ]);
+    //         Log::info('NEXA review request sent successfully', [
+    //             'contract_id' => $contract->id,
+    //             'chat_room_id' => $chatRoom->id,
+    //             'brand_id' => $brand->id,
+    //             'creator_id' => $creator->id,
+    //         ]);
 
-        } catch (\Exception $e) {
-            Log::error('Failed to send NEXA review request', [
-                'contract_id' => $contract->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
+    //     } catch (\Exception $e) {
+    //         Log::error('Failed to send NEXA review request', [
+    //             'contract_id' => $contract->id,
+    //             'error' => $e->getMessage(),
+    //         ]);
+    //     }
+    // }
 } 

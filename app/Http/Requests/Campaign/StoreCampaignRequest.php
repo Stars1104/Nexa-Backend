@@ -25,6 +25,7 @@ class StoreCampaignRequest extends FormRequest
             'title' => ['required', 'string', 'max:255'],
             'description' => ['required', 'string', 'max:5000'],
             'budget' => ['required', 'numeric', 'min:1', 'max:999999.99'],
+            'remuneration_type' => ['required', 'in:paga,permuta'],
             'requirements' => ['nullable', 'string', 'max:5000'],
             'target_states' => ['nullable'],
             'category' => ['nullable', 'string', 'max:255'],
@@ -35,6 +36,12 @@ class StoreCampaignRequest extends FormRequest
             'attach_file' => ['nullable', 'file', 'mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,zip,rar,jpg,jpeg,png,gif,webp', 'max:10240'], // 10MB max, now allows images too
             'deadline' => ['required', 'date'],
             'max_bids' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'min_age' => ['nullable', 'integer', 'min:18', 'max:100'],
+            'max_age' => ['nullable', 'integer', 'min:18', 'max:100'],
+            'target_genders' => ['nullable', 'array'],
+            'target_genders.*' => ['string', 'in:male,female,other'],
+            'target_creator_types' => ['required', 'array', 'min:1'],
+            'target_creator_types.*' => ['string', 'in:ugc,influencer,both'],
         ];
     }
 
@@ -70,6 +77,20 @@ class StoreCampaignRequest extends FormRequest
             'max_bids.integer' => 'Maximum bids must be a valid number.',
             'max_bids.min' => 'Maximum bids must be at least 1.',
             'max_bids.max' => 'Maximum bids cannot exceed 100.',
+            'min_age.integer' => 'Minimum age must be a valid number.',
+            'min_age.min' => 'Minimum age must be at least 18.',
+            'min_age.max' => 'Minimum age cannot exceed 100.',
+            'max_age.integer' => 'Maximum age must be a valid number.',
+            'max_age.min' => 'Maximum age must be at least 18.',
+            'max_age.max' => 'Maximum age cannot exceed 100.',
+            'target_genders.array' => 'Target genders must be an array.',
+            'target_genders.*.string' => 'Each target gender must be a string.',
+            'target_genders.*.in' => 'Invalid target gender value.',
+            'target_creator_types.required' => 'At least one creator type must be selected.',
+            'target_creator_types.array' => 'Target creator types must be an array.',
+            'target_creator_types.min' => 'At least one creator type must be selected.',
+            'target_creator_types.*.string' => 'Each target creator type must be a string.',
+            'target_creator_types.*.in' => 'Invalid target creator type value.',
         ];
     }
 
