@@ -27,8 +27,8 @@ return new class extends Migration
         // Insert the three subscription plans
         DB::table('subscription_plans')->insert([
             [
-                'name' => 'Monthly Plan',
-                'description' => '1-month subscription to Nexa Premium',
+                'name' => 'Plano Mensal',
+                'description' => 'Assinatura de 1 mês do Nexa Premium',
                 'price' => 29.99,
                 'duration_months' => 1,
                 'is_active' => true,
@@ -44,8 +44,8 @@ return new class extends Migration
                 'updated_at' => now(),
             ],
             [
-                'name' => '6-Month Plan',
-                'description' => '6-month subscription to Nexa Premium',
+                'name' => 'Plano Semestral',
+                'description' => 'Assinatura de 6 meses do Nexa Premium',
                 'price' => 119.94, // 19.99 * 6 months
                 'duration_months' => 6,
                 'is_active' => true,
@@ -62,8 +62,8 @@ return new class extends Migration
                 'updated_at' => now(),
             ],
             [
-                'name' => '6-Year Plan',
-                'description' => '6-year subscription to Nexa Premium',
+                'name' => 'Plano Anual',
+                'description' => 'Assinatura de 12 meses do Nexa Premium',
                 'price' => 1799.28, // 24.99 * 12 months * 6 years
                 'duration_months' => 72,
                 'is_active' => true,

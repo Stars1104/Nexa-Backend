@@ -13,9 +13,9 @@ return new class extends Migration
     public function up(): void
     {
         // Update the subscription plans with new pricing
-        DB::table('subscription_plans')->where('name', 'Monthly Plan')->update([
-            'name' => 'Monthly Plan',
-            'description' => '1-month subscription to Nexa Premium',
+        DB::table('subscription_plans')->where('name', 'Plano Mensal')->update([
+            'name' => 'Plano Mensal',
+            'description' => 'Assinatura de 1 mês do Nexa Premium',
             'price' => 39.90,
             'duration_months' => 1,
             'features' => json_encode([
@@ -28,9 +28,9 @@ return new class extends Migration
             'updated_at' => now(),
         ]);
 
-        DB::table('subscription_plans')->where('name', '6-Month Plan')->update([
+        DB::table('subscription_plans')->where('name', 'Plano Semestral')->update([
             'name' => 'Six-Month Plan',
-            'description' => '6-month subscription to Nexa Premium',
+            'description' => 'Assinatura de 6 meses do Nexa Premium',
             'price' => 29.90,
             'duration_months' => 6,
             'features' => json_encode([
@@ -44,7 +44,7 @@ return new class extends Migration
             'updated_at' => now(),
         ]);
 
-        DB::table('subscription_plans')->where('name', '6-Year Plan')->update([
+        DB::table('subscription_plans')->where('name', 'Plano Anual')->update([
             'name' => 'Annual Plan',
             'description' => '12-month subscription to Nexa Premium',
             'price' => 19.90,
@@ -67,13 +67,13 @@ return new class extends Migration
     public function down(): void
     {
         // Revert to original pricing
-        DB::table('subscription_plans')->where('name', 'Monthly Plan')->update([
+        DB::table('subscription_plans')->where('name', 'Plano Mensal')->update([
             'price' => 29.99,
             'updated_at' => now(),
         ]);
 
         DB::table('subscription_plans')->where('name', 'Six-Month Plan')->update([
-            'name' => '6-Month Plan',
+            'name' => 'Plano Semestral',
             'price' => 119.94,
             'duration_months' => 6,
             'features' => json_encode([
@@ -88,7 +88,7 @@ return new class extends Migration
         ]);
 
         DB::table('subscription_plans')->where('name', 'Annual Plan')->update([
-            'name' => '6-Year Plan',
+            'name' => 'Plano Anual',
             'price' => 1799.28,
             'duration_months' => 72,
             'features' => json_encode([

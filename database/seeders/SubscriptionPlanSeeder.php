@@ -15,11 +15,10 @@ class SubscriptionPlanSeeder extends Seeder
     {
         // Clear existing subscription plans
         DB::table('subscription_plans')->truncate();
-
         $plans = [
             [
-                'name' => 'Monthly Plan',
-                'description' => '1-month subscription to Nexa Premium',
+                'name' => 'Plano Mensal',
+                'description' => 'Assinatura de 1 mês do Nexa Premium',
                 'price' => 39.90,
                 'duration_months' => 1,
                 'is_active' => true,
@@ -35,8 +34,8 @@ class SubscriptionPlanSeeder extends Seeder
                 'updated_at' => now(),
             ],
             [
-                'name' => 'Six-Month Plan',
-                'description' => '6-month subscription to Nexa Premium',
+                'name' => 'Plano Semestral',
+                'description' => 'Assinatura de 6 meses do Nexa Premium',
                 'price' => 29.90,
                 'duration_months' => 6,
                 'is_active' => true,
@@ -53,8 +52,8 @@ class SubscriptionPlanSeeder extends Seeder
                 'updated_at' => now(),
             ],
             [
-                'name' => 'Annual Plan',
-                'description' => '12-month subscription to Nexa Premium',
+                'name' => 'Plano Anual',
+                'description' => 'Assinatura de 12 meses do Nexa Premium',
                 'price' => 19.90,
                 'duration_months' => 12,
                 'is_active' => true,
@@ -71,6 +70,7 @@ class SubscriptionPlanSeeder extends Seeder
                 'updated_at' => now(),
             ],
         ];
+        
 
         foreach ($plans as $plan) {
             DB::table('subscription_plans')->insert($plan);

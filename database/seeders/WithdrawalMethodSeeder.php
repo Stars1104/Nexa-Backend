@@ -17,7 +17,7 @@ class WithdrawalMethodSeeder extends Seeder
             [
                 'code' => 'pagarme_bank_transfer',
                 'name' => 'Transferência Bancária via Pagar.me',
-                'description' => 'Transferência para conta bancária registrada via Pagar.me',
+                'description' => '123',
                 'min_amount' => 10.00,
                 'max_amount' => 10000.00,
                 'processing_time' => '1-2 dias úteis',
