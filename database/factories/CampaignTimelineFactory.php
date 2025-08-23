@@ -39,8 +39,8 @@ class CampaignTimelineFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'milestone_type' => 'video_submission',
-            'title' => 'Image and Video Submission',
-            'description' => 'Submit the final image and video content',
+            'title' => 'Envio de Imagem e Vídeo',
+            'description' => 'Enviar o conteúdo final de imagem e vídeo',
         ]);
     }
 

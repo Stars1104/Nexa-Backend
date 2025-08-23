@@ -128,7 +128,7 @@ class DeliveryMaterialTest extends TestCase
         $this->assertDatabaseHas('campaign_timelines', [
             'contract_id' => $contract->id,
             'milestone_type' => 'video_submission',
-            'title' => 'Image and Video Submission'
+            'title' => 'Envio de Imagem e Vídeo'
         ]);
     }
 } 

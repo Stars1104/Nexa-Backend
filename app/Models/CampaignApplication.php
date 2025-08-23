@@ -15,6 +15,7 @@ class CampaignApplication extends Model
         'campaign_id',
         'creator_id',
         'status',
+        'workflow_status',
         'proposal',
         'portfolio_links',
         'estimated_delivery_days',
@@ -22,7 +23,9 @@ class CampaignApplication extends Model
         'rejection_reason',
         'reviewed_by',
         'reviewed_at',
-        'approved_at'
+        'approved_at',
+        'first_contact_at',
+        'agreement_finalized_at'
     ];
 
     protected $casts = [
@@ -30,6 +33,8 @@ class CampaignApplication extends Model
         'proposed_budget' => 'decimal:2',
         'reviewed_at' => 'datetime',
         'approved_at' => 'datetime',
+        'first_contact_at' => 'datetime',
+        'agreement_finalized_at' => 'datetime',
     ];
 
     // Relationships
@@ -46,6 +51,12 @@ class CampaignApplication extends Model
     public function reviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function chatRoom(): HasOne
+    {
+        return $this->hasOne(ChatRoom::class, 'campaign_id', 'campaign_id')
+            ->where('creator_id', $this->creator_id);
     }
 
     // Scopes
@@ -74,6 +85,21 @@ class CampaignApplication extends Model
         return $query->where('campaign_id', $campaignId);
     }
 
+    public function scopeFirstContactPending($query)
+    {
+        return $query->where('workflow_status', 'first_contact_pending');
+    }
+
+    public function scopeAgreementInProgress($query)
+    {
+        return $query->where('workflow_status', 'agreement_in_progress');
+    }
+
+    public function scopeAgreementFinalized($query)
+    {
+        return $query->where('workflow_status', 'agreement_finalized');
+    }
+
     // Methods
     public function isPending(): bool
     {
@@ -90,10 +116,26 @@ class CampaignApplication extends Model
         return $this->status === 'rejected';
     }
 
+    public function isFirstContactPending(): bool
+    {
+        return $this->workflow_status === 'first_contact_pending';
+    }
+
+    public function isAgreementInProgress(): bool
+    {
+        return $this->workflow_status === 'agreement_in_progress';
+    }
+
+    public function isAgreementFinalized(): bool
+    {
+        return $this->workflow_status === 'agreement_finalized';
+    }
+
     public function approve($brandId): bool
     {
         $this->update([
             'status' => 'approved',
+            'workflow_status' => 'first_contact_pending',
             'reviewed_by' => $brandId,
             'reviewed_at' => now(),
             'approved_at' => now(),
@@ -107,9 +149,38 @@ class CampaignApplication extends Model
     {
         $this->update([
             'status' => 'rejected',
+            'workflow_status' => 'first_contact_pending', // Reset workflow status
             'reviewed_by' => $brandId,
             'reviewed_at' => now(),
             'rejection_reason' => $reason
+        ]);
+
+        return true;
+    }
+
+    public function initiateFirstContact(): bool
+    {
+        if (!$this->isApproved() || !$this->isFirstContactPending()) {
+            return false;
+        }
+
+        $this->update([
+            'workflow_status' => 'agreement_in_progress',
+            'first_contact_at' => now()
+        ]);
+
+        return true;
+    }
+
+    public function finalizeAgreement(): bool
+    {
+        if (!$this->isApproved() || !$this->isAgreementInProgress()) {
+            return false;
+        }
+
+        $this->update([
+            'workflow_status' => 'agreement_finalized',
+            'agreement_finalized_at' => now()
         ]);
 
         return true;
@@ -123,5 +194,37 @@ class CampaignApplication extends Model
     public function canBeWithdrawnBy($user): bool
     {
         return $this->creator_id === $user->id && $this->isPending();
+    }
+
+    public function canInitiateFirstContact(): bool
+    {
+        return $this->isApproved() && $this->isFirstContactPending();
+    }
+
+    public function canFinalizeAgreement(): bool
+    {
+        return $this->isApproved() && $this->isAgreementInProgress();
+    }
+
+    // Get workflow status label for display
+    public function getWorkflowStatusLabelAttribute(): string
+    {
+        return match($this->workflow_status) {
+            'first_contact_pending' => 'Primeiro Contato Pendente',
+            'agreement_in_progress' => 'Acordo em Andamento',
+            'agreement_finalized' => 'Acordo Finalizado',
+            default => 'Desconhecido'
+        };
+    }
+
+    // Get workflow status color for UI
+    public function getWorkflowStatusColorAttribute(): string
+    {
+        return match($this->workflow_status) {
+            'first_contact_pending' => 'warning',
+            'agreement_in_progress' => 'info',
+            'agreement_finalized' => 'success',
+            default => 'default'
+        };
     }
 }

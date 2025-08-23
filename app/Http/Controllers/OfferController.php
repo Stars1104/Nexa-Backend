@@ -457,6 +457,23 @@ class OfferController extends Controller
                     // Get the created contract
                     $contract = $offer->contract;
                     
+                    // Update application workflow status to finalized
+                    $application = CampaignApplication::where('campaign_id', $chatRoom->campaign_id)
+                        ->where('creator_id', $chatRoom->creator_id)
+                        ->where('status', 'approved')
+                        ->first();
+                    
+                    if ($application) {
+                        $application->finalizeAgreement();
+                        
+                        Log::info('Application workflow status updated to finalized', [
+                            'application_id' => $application->id,
+                            'campaign_id' => $chatRoom->campaign_id,
+                            'creator_id' => $chatRoom->creator_id,
+                            'workflow_status' => $application->workflow_status,
+                        ]);
+                    }
+                    
                     Log::info('Contract created successfully', [
                         'contract_id' => $contract->id ?? 'null',
                         'contract_status' => $contract->status ?? 'null',
@@ -529,6 +546,28 @@ class OfferController extends Controller
                         'offer_id' => $offer->id,
                         'contract_id' => $offer->contract->id ?? null,
                         'status' => $offer->status,
+                        'offer' => [
+                            'id' => $offer->id,
+                            'title' => $offer->title,
+                            'description' => $offer->description,
+                            'budget' => $offer->budget,
+                            'formatted_budget' => $offer->formatted_budget,
+                            'estimated_days' => $offer->estimated_days,
+                            'status' => $offer->status,
+                            'brand_id' => $offer->brand_id,
+                            'creator_id' => $offer->creator_id,
+                            'chat_room_id' => $chatRoom->room_id,
+                        ],
+                        'contract' => $contract ? [
+                            'id' => $contract->id,
+                            'title' => $contract->title,
+                            'description' => $contract->description,
+                            'status' => $contract->status,
+                            'workflow_status' => $contract->status,
+                            'brand_id' => $contract->brand_id,
+                            'creator_id' => $contract->creator_id,
+                            'can_be_completed' => $contract->canBeCompleted(),
+                        ] : null,
                     ],
                 ]);
             } else {

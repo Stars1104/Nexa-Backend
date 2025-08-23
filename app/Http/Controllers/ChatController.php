@@ -556,11 +556,24 @@ class ChatController extends Controller
             $request->creator_id
         );
 
+        // Update application workflow status to indicate first contact has been initiated
+        if ($room->wasRecentlyCreated) {
+            $application->initiateFirstContact();
+            
+            \Log::info('Application workflow status updated to agreement_in_progress', [
+                'application_id' => $application->id,
+                'campaign_id' => $request->campaign_id,
+                'creator_id' => $request->creator_id,
+                'workflow_status' => $application->workflow_status,
+            ]);
+        }
+
         return response()->json([
             'success' => true,
             'data' => [
                 'room_id' => $room->room_id,
                 'message' => 'Chat room created successfully',
+                'workflow_status_updated' => $room->wasRecentlyCreated,
             ],
         ]);
     }

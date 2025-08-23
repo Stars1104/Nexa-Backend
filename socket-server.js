@@ -201,6 +201,30 @@ io.on('connection', (socket) => {
         }
     });
 
+    // NEW: Handle offer acceptance confirmation message
+    socket.on('send_offer_acceptance_message', (data) => {
+        console.log('Received send_offer_acceptance_message event:', data);
+        
+        const { roomId, offerData, contractData, senderId, senderName, senderAvatar } = data;
+        
+        // Broadcast the acceptance confirmation message to all users in the room
+        console.log(`Broadcasting offer_acceptance_message to room ${roomId}`);
+        io.to(roomId).emit('offer_acceptance_message', {
+            roomId,
+            offerData,
+            contractData,
+            senderId,
+            senderName,
+            senderAvatar,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Log all sockets in the room
+        io.in(roomId).fetchSockets().then(sockets => {
+            console.log(`Room ${roomId} has ${sockets.length} sockets:`, sockets.map(s => s.id));
+        });
+    });
+
     // NEW: Handle offer rejection
     socket.on('offer_rejected', (data) => {
         const { roomId, offerData, senderId, rejectionReason } = data;
