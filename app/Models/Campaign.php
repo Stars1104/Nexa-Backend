@@ -269,4 +269,132 @@ class Campaign extends Model
     {
         return $this->bids()->where('status', 'accepted')->exists();
     }
+
+    /**
+     * Get the remunerationType attribute in camelCase for frontend compatibility
+     */
+    public function getRemunerationTypeAttribute()
+    {
+        return $this->attributes['remuneration_type'] ?? null;
+    }
+
+    /**
+     * Get the requirements attribute for frontend compatibility
+     */
+    public function getRequirementsAttribute()
+    {
+        return $this->attributes['requirements'] ?? null;
+    }
+
+    /**
+     * Get the campaignType attribute in camelCase for frontend compatibility
+     */
+    public function getCampaignTypeAttribute()
+    {
+        return $this->attributes['campaign_type'] ?? null;
+    }
+
+    /**
+     * Get the targetStates attribute in camelCase for frontend compatibility
+     */
+    public function getTargetStatesAttribute()
+    {
+        return $this->attributes['target_states'] ?? null;
+    }
+
+    /**
+     * Get the targetGenders attribute in camelCase for frontend compatibility
+     */
+    public function getTargetGendersAttribute()
+    {
+        return $this->attributes['target_genders'] ?? null;
+    }
+
+    /**
+     * Get the targetCreatorTypes attribute in camelCase for frontend compatibility
+     */
+    public function getTargetCreatorTypesAttribute()
+    {
+        return $this->attributes['target_creator_types'] ?? null;
+    }
+
+    /**
+     * Get the minAge attribute in camelCase for frontend compatibility
+     */
+    public function getMinAgeAttribute()
+    {
+        return $this->attributes['min_age'] ?? null;
+    }
+
+    /**
+     * Get the maxAge attribute in camelCase for frontend compatibility
+     */
+    public function getMaxAgeAttribute()
+    {
+        return $this->attributes['max_age'] ?? null;
+    }
+
+    /**
+     * Get the isActive attribute in camelCase for frontend compatibility
+     */
+    public function getIsActiveAttribute()
+    {
+        return $this->attributes['is_active'] ?? null;
+    }
+
+    /**
+     * Get the isFeatured attribute in camelCase for frontend compatibility
+     */
+    public function getIsFeaturedAttribute()
+    {
+        return $this->attributes['is_featured'] ?? null;
+    }
+
+    /**
+     * Get the imageUrl attribute in camelCase for frontend compatibility
+     */
+    public function getImageUrlAttribute()
+    {
+        return $this->attributes['image_url'] ?? null;
+    }
+
+    /**
+     * Get the attachFile attribute in camelCase for frontend compatibility
+     */
+    public function getAttachFileAttribute()
+    {
+        return $this->attributes['attach_file'] ?? null;
+    }
+
+    /**
+     * Get the rejectionReason attribute in camelCase for frontend compatibility
+     */
+    public function getRejectionReasonAttribute()
+    {
+        return $this->attributes['rejection_reason'] ?? null;
+    }
+
+    /**
+     * Get the maxBids attribute in camelCase for frontend compatibility
+     */
+    public function getMaxBidsAttribute()
+    {
+        return $this->attributes['max_bids'] ?? null;
+    }
+
+    /**
+     * Get the approvedAt attribute in camelCase for frontend compatibility
+     */
+    public function getApprovedAtAttribute()
+    {
+        return $this->attributes['approved_at'] ?? null;
+    }
+
+    /**
+     * Get the approvedBy attribute in camelCase for frontend compatibility
+     */
+    public function getApprovedByAttribute()
+    {
+        return $this->attributes['approved_by'] ?? null;
+    }
 }
