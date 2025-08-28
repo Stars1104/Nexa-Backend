@@ -473,7 +473,7 @@ class CampaignController extends Controller
             
             $data = $request->validated();
             $data['brand_id'] = $user->id;
-            $data['status'] = 'pending';
+            $data['status'] = $data['status'] ?? 'pending';
             $data['is_active'] = true;
             
             // Ensure target_states is always an array
