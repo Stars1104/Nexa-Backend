@@ -500,6 +500,20 @@ class PortfolioController extends Controller
                     'total_reviews' => $totalReviews,
                     'total_campaigns' => $creator->bids()->count(),
                     'completed_campaigns' => $creator->bids()->where('status', 'completed')->count(),
+                    // Enhanced creator information
+                    'birth_date' => $creator->birth_date,
+                    'age' => $creator->birth_date ? now()->diffInYears($creator->birth_date) : null,
+                    'gender' => $creator->gender,
+                    'creator_type' => $creator->creator_type,
+                    'industry' => $creator->industry,
+                    'language' => $creator->language,
+                    'languages' => $creator->language ? [$creator->language] : ['English'],
+                    // Social media handles
+                    'instagram_handle' => $creator->instagram_handle,
+                    'tiktok_handle' => $creator->tiktok_handle,
+                    'youtube_channel' => $creator->youtube_channel,
+                    'facebook_page' => $creator->facebook_page,
+                    'twitter_handle' => $creator->twitter_handle,
                 ],
                 'portfolio' => $portfolio ? [
                     'title' => $portfolio->title,
