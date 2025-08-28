@@ -344,12 +344,12 @@ class EmailVerificationService
                     
                     <!-- Header Section -->
                     <div class="header" style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0;">
-                        <div style="margin-bottom: 20px;">
+                        <!-- <div style="margin-bottom: 20px;">
                             <img src="{$logoUrl}" 
                                 alt="Nexa Logo" 
                                 class="logo" 
                                 style="width: 100px; background: rgba(255, 255, 255, 0.1); padding: 10px; display: block; margin: 0 auto;">
-                        </div>
+                        </div> -->
                         <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
                             Welcome to Nexa-UGC!
                         </h1>
