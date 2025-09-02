@@ -33,7 +33,7 @@ class WithdrawalFeeTest extends TestCase
             'name' => 'Test User',
             'email' => 'test@example.com',
             'password' => bcrypt('password'),
-            'user_type' => 'creator',
+            'role' => 'creator',
         ]);
 
         // Create creator balance
@@ -94,7 +94,7 @@ class WithdrawalFeeTest extends TestCase
             'name' => 'Test User 2',
             'email' => 'test2@example.com',
             'password' => bcrypt('password'),
-            'user_type' => 'creator',
+            'role' => 'creator',
         ]);
 
         // Create creator balance

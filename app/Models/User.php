@@ -65,6 +65,18 @@ class User extends Authenticatable implements MustVerifyEmail
     ];
 
     /**
+     * The model's default values for attributes.
+     *
+     * @var array
+     */
+    protected $attributes = [
+        'gender' => 'other',
+        'birth_date' => '1990-01-01',
+        'student_verified' => false,
+        'has_premium' => false,
+    ];
+
+    /**
      * The attributes that should be hidden for serialization.
      *
      * @var array<int, string>

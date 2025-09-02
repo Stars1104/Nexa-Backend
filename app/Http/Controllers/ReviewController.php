@@ -23,12 +23,12 @@ class ReviewController extends Controller
             'contract_id' => 'required|integer|exists:contracts,id',
             'rating' => 'required|integer|min:1|max:5',
             'comment' => 'nullable|string|max:1000',
-            'rating_categories' => 'nullable|array',
-            'rating_categories.communication' => 'nullable|integer|min:1|max:5',
-            'rating_categories.quality' => 'nullable|integer|min:1|max:5',
-            'rating_categories.timeliness' => 'nullable|integer|min:1|max:5',
-            'rating_categories.professionalism' => 'nullable|integer|min:1|max:5',
-            'is_public' => 'boolean',
+            'rating_categories' => 'sometimes|array',
+            'rating_categories.communication' => 'sometimes|integer|min:1|max:5',
+            'rating_categories.quality' => 'sometimes|integer|min:1|max:5',
+            'rating_categories.timeliness' => 'sometimes|integer|min:1|max:5',
+            'rating_categories.professionalism' => 'sometimes|integer|min:1|max:5',
+            'is_public' => 'sometimes|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -62,6 +62,16 @@ class ReviewController extends Controller
                     ->find($request->contract_id);
             }
 
+            Log::info('Review submission attempt', [
+                'user_id' => $user->id,
+                'user_role' => $user->role,
+                'contract_id' => $request->contract_id,
+                'contract_found' => !!$contract,
+                'contract_status' => $contract?->status,
+                'has_creator_review' => $contract?->has_creator_review,
+                'has_brand_review' => $contract?->has_brand_review,
+            ]);
+
             if (!$contract) {
                 return response()->json([
                     'success' => false,
@@ -75,6 +85,12 @@ class ReviewController extends Controller
                 ->first();
 
             if ($existingReview) {
+                Log::warning('Duplicate review attempt blocked', [
+                    'user_id' => $user->id,
+                    'contract_id' => $contract->id,
+                    'existing_review_id' => $existingReview->id,
+                ]);
+                
                 return response()->json([
                     'success' => false,
                     'message' => 'You have already reviewed this contract',
@@ -83,6 +99,11 @@ class ReviewController extends Controller
 
             // Check if both parties have already reviewed each other
             if ($contract->hasBothReviews()) {
+                Log::warning('Both parties already reviewed attempt blocked', [
+                    'user_id' => $user->id,
+                    'contract_id' => $contract->id,
+                ]);
+                
                 return response()->json([
                     'success' => false,
                     'message' => 'Both parties have already reviewed this contract',
@@ -91,6 +112,13 @@ class ReviewController extends Controller
 
             // Determine who is being reviewed based on user role
             $reviewedId = $user->isBrand() ? $contract->creator_id : $contract->brand_id;
+            
+            Log::info('Creating review', [
+                'contract_id' => $contract->id,
+                'reviewer_id' => $user->id,
+                'reviewed_id' => $reviewedId,
+                'rating' => $request->rating,
+            ]);
             
             $review = Review::create([
                 'contract_id' => $contract->id,
@@ -103,13 +131,29 @@ class ReviewController extends Controller
             ]);
 
             // Update reviewed user's statistics
-            $reviewedUser = User::find($reviewedId);
-            if ($reviewedUser) {
-                $reviewedUser->updateReviewStats();
+            try {
+                $reviewedUser = User::find($reviewedId);
+                if ($reviewedUser) {
+                    $reviewedUser->updateReviewStats();
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to update reviewed user stats', [
+                    'review_id' => $review->id,
+                    'reviewed_user_id' => $reviewedId,
+                    'error' => $e->getMessage()
+                ]);
             }
 
             // Update contract review status
-            $contract->updateReviewStatus();
+            try {
+                $contract->updateReviewStatus();
+            } catch (\Exception $e) {
+                Log::error('Failed to update contract review status', [
+                    'review_id' => $review->id,
+                    'contract_id' => $contract->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
 
             // Process payment after review is submitted
             if ($contract->processPaymentAfterReview()) {
@@ -120,11 +164,6 @@ class ReviewController extends Controller
                     'platform_fee' => $contract->platform_fee,
                 ]);
             }
-
-            // Check if both parties have reviewed and send NEXA review request
-            // if ($contract->hasBothReviews()) {
-            //     $this->sendNexaReviewRequest($contract);
-            // }
 
             Log::info('Review created successfully', [
                 'review_id' => $review->id,

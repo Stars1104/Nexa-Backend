@@ -21,6 +21,45 @@ const io = new Server(httpServer, {
     maxHttpBufferSize: 1e8
 });
 
+// Add HTTP endpoint for Laravel to emit events
+httpServer.on('request', (req, res) => {
+    if (req.method === 'POST' && req.url === '/emit') {
+        let body = '';
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+        req.on('end', () => {
+            try {
+                const { event, data } = JSON.parse(body);
+                
+                console.log(`Received event from Laravel: ${event}`, data);
+                
+                // Emit the event to the appropriate room or all clients
+                if (event === 'new_message' && data.roomId) {
+                    io.to(data.roomId).emit(event, data);
+                    console.log(`Emitted ${event} to room ${data.roomId}`);
+                } else if (data.roomId) {
+                    io.to(data.roomId).emit(event, data);
+                    console.log(`Emitted ${event} to room ${data.roomId}`);
+                } else {
+                    io.emit(event, data);
+                    console.log(`Broadcasted ${event} to all clients`);
+                }
+                
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, message: 'Event emitted' }));
+            } catch (error) {
+                console.error('Error processing event from Laravel:', error);
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: error.message }));
+            }
+        });
+    } else {
+        res.writeHead(404);
+        res.end();
+    }
+});
+
 // Store connected users
 const connectedUsers = new Map();
 const userRooms = new Map();
@@ -368,6 +407,38 @@ io.on('connection', (socket) => {
                 contractData,
                 senderId,
                 timestamp: new Date().toISOString()
+            });
+        }
+    });
+
+    // NEW: Handle general contract status updates
+    socket.on('contract_status_update', (data) => {
+        const { roomId, contractData, terminationReason, timestamp } = data;
+        
+        // Broadcast contract status update to all users in the room
+        io.to(roomId).emit('contract_status_update', {
+            roomId,
+            contractData,
+            terminationReason,
+            timestamp: timestamp || new Date().toISOString()
+        });
+        
+        // Also send to both users' notification rooms
+        if (contractData.creator_id) {
+            const creatorNotificationRoom = `user_${contractData.creator_id}`;
+            io.to(creatorNotificationRoom).emit('contract_status_update_notification', {
+                contractData,
+                terminationReason,
+                timestamp: timestamp || new Date().toISOString()
+            });
+        }
+        
+        if (contractData.brand_id) {
+            const brandNotificationRoom = `user_${contractData.brand_id}`;
+            io.to(brandNotificationRoom).emit('contract_status_update_notification', {
+                contractData,
+                terminationReason,
+                timestamp: timestamp || new Date().toISOString()
             });
         }
     });

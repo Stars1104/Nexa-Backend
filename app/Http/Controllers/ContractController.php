@@ -10,9 +10,112 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use App\Services\NotificationService;
+use App\Models\ChatRoom;
+use App\Traits\OfferChatMessageTrait;
 
 class ContractController extends Controller
 {
+    use OfferChatMessageTrait;
+
+    /**
+     * Create a system message for contract-related events
+     */
+    private function createSystemMessage(ChatRoom $chatRoom, string $message, array $data = []): void
+    {
+        try {
+            $messageData = [
+                'chat_room_id' => $chatRoom->id,
+                'sender_id' => null, // System message
+                'message' => $message,
+                'message_type' => 'system',
+                'offer_data' => json_encode($data),
+            ];
+
+            \App\Models\Message::create($messageData);
+
+            // Update chat room's last_message_at to ensure proper ordering
+            $chatRoom->update(['last_message_at' => now()]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to create system message', [
+                'chat_room_id' => $chatRoom->id,
+                'message' => $message,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Send contract completion message to chat
+     */
+    private function sendContractCompletionMessage(Contract $contract, User $brand): void
+    {
+        try {
+            $chatRoom = $contract->offer->chatRoom ?? null;
+            
+            if (!$chatRoom) {
+                Log::warning('No chat room found for contract completion message', [
+                    'contract_id' => $contract->id,
+                    'offer_id' => $contract->offer_id,
+                ]);
+                return;
+            }
+
+            // Create the completion message with review data
+            $message = \App\Models\Message::create([
+                'chat_room_id' => $chatRoom->id,
+                'sender_id' => null, // System message
+                'message' => '🎉 O contrato foi finalizado com sucesso. O criador pode avaliar a marca clicando no botão abaixo.',
+                'message_type' => 'contract_completion',
+                'offer_data' => json_encode([
+                    'contract_id' => $contract->id,
+                    'requires_review' => true,
+                    'review_type' => 'creator_review_only',
+                    'brand_name' => $brand->name,
+                    'creator_name' => $contract->creator->name,
+                    'contract_title' => $contract->title,
+                    'creator_amount' => $contract->formatted_creator_amount,
+                    'completed_at' => $contract->completed_at->toISOString(),
+                    'show_review_button_for_creator_only' => true,
+                ]),
+                'is_system_message' => true,
+            ]);
+
+            // Update chat room's last_message_at timestamp
+            $chatRoom->update(['last_message_at' => now()]);
+
+            // Emit socket event for real-time message delivery
+            $this->emitSocketEvent('new_message', [
+                'roomId' => $chatRoom->room_id,
+                'messageId' => $message->id,
+                'message' => $message->message,
+                'messageType' => $message->message_type,
+                'senderId' => null,
+                'senderName' => 'Sistema',
+                'senderAvatar' => null,
+                'offerData' => json_decode($message->offer_data, true),
+                'timestamp' => $message->created_at->toISOString(),
+                'isSystemMessage' => true,
+            ]);
+
+            Log::info('Contract completion message sent successfully', [
+                'contract_id' => $contract->id,
+                'chat_room_id' => $chatRoom->id,
+                'message_id' => $message->id,
+                'offer_data' => $message->offer_data,
+                'message_type' => $message->message_type,
+                'socket_offer_data' => json_decode($message->offer_data, true),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to send contract completion message', [
+                'contract_id' => $contract->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+        }
+    }
+
     /**
      * Emit Socket.IO event for real-time updates
      */
@@ -23,6 +126,16 @@ class ContractController extends Controller
                 $io = $GLOBALS['socket_server'];
                 $io->emit($event, $data);
                 Log::info("Socket event emitted: {$event}", $data);
+                
+                // Also emit a general contract status update event for better frontend handling
+                if (in_array($event, ['contract_completed', 'contract_terminated', 'contract_activated'])) {
+                    $io->emit('contract_status_update', [
+                        'roomId' => $data['roomId'],
+                        'contractData' => $data['contractData'],
+                        'terminationReason' => $data['terminationReason'] ?? null,
+                        'timestamp' => now()->toISOString(),
+                    ]);
+                }
             } else {
                 Log::warning("Socket server not available for event: {$event}");
             }
@@ -41,82 +154,52 @@ class ContractController extends Controller
     {
         try {
             $chatRoom = $contract->offer->chatRoom;
-            $brand = $contract->brand;
-            $creator = $contract->creator;
+            
+            if (!$chatRoom) {
+                Log::warning('No chat room found for contract', [
+                    'contract_id' => $contract->id,
+                    'offer_id' => $contract->offer_id,
+                ]);
+                return;
+            }
 
-            // Message for creator
-            $creatorMessage = "🩷 Parabéns, você foi aprovada em mais uma campanha da NEXA!\n\n" .
-                "Estamos muito felizes em contar com você e esperamos que mostre toda sua criatividade, comprometimento e qualidade para representar bem a marca e a nossa plataforma.\n\n" .
-                "Antes de começar, fique atenta aos pontos abaixo para garantir uma parceria de sucesso:\n\n" .
-                "• Confirme seu endereço de envio o quanto antes, para que o produto possa ser encaminhado sem atrasos.\n" .
-                "• Você devera entregar o roteiro da campanha em até 5 dias úteis.\n" .
-                "• É essencial seguir todas as orientações da marca presentes no briefing.\n" .
-                "• Aguarde a aprovação do roteiro antes de gravar o conteúdo.\n" .
-                "• Após a aprovação do roteiro, o conteúdo final deve ser entregue em até 5 dias úteis.\n" .
-                "• O vídeo deve ser enviado com qualidade profissional, e poderá passar por até 2 solicitações de ajustes, caso não esteja conforme o briefing.\n" .
-                "• Pedimos que mantenha o retorno rápido nas mensagens dentro do chat da plataforma.\n\n" .
-                "Atenção para algumas regras importantes:\n\n" .
-                "✔ Toda a comunicação deve acontecer exclusivamente pelo chat da Anexa.\n" .
-                "✘ Não é permitido compartilhar dados bancários, e-mails ou número de WhatsApp dentro da plataforma.\n" .
-                "⚠️ O não cumprimento dos prazos ou regras pode acarretar em penalizações ou banimento.\n" .
-                "🚫 Caso a campanha seja cancelada, o produto deverá ser devolvido, e a criadora poderá ser punida.\n\n" .
-                "Estamos aqui para garantir a melhor experiência para criadoras e marcas. Boa campanha! 💼💡";
-
-            // Message for brand
-            $brandMessage = "🎉 **Parabéns pela parceria iniciada com uma criadora da nossa plataforma!**\n\n" .
-                "Para garantir o melhor resultado possível, é essencial que você oriente a criadora com detalhamento e clareza sobre como deseja que o conteúdo seja feito. **Quanto mais específica for a comunicação, maior será a qualidade da entrega.**\n\n" .
-                "**📋 Próximos Passos Importantes:**\n\n" .
-                "• **💰 Saldo da Campanha:** Insira o valor da campanha na aba \"Saldo\" da plataforma\n" .
-                "• **✅ Aprovação de Conteúdo:** Avalie o roteiro antes da gravação para garantir alinhamento\n" .
-                "• **🎬 Entrega Final:** Após receber o conteúdo pronto e editado, libere o pagamento\n" .
-                "• **⭐ Finalização:** Clique em \"Finalizar Campanha\" e avalie o trabalho entregue\n" .
-                "• **📝 Briefing:** Reforce os pontos principais com a criadora para alinhar com o objetivo da marca\n" .
-                "• **🔄 Ajustes:** Permita até 2 pedidos de ajustes por vídeo caso necessário\n\n" .
-                "**🔒 Regras de Segurança da Campanha:**\n\n" .
-                "✅ **Comunicação Exclusiva:** Toda comunicação deve ser feita pelo chat da NEXA\n" .
-                "❌ **Proteção de Dados:** Não compartilhe dados bancários, contatos pessoais ou WhatsApp\n" .
-                "⚠️ **Cumprimento de Prazos:** Descumprimento pode resultar em advertência ou bloqueio\n" .
-                "🚫 **Cancelamento:** Em caso de cancelamento, o produto deve ser solicitado de volta\n\n" .
-                "**💼 A NEXA está aqui para facilitar conexões seguras e profissionais!**\n" .
-                "Conte conosco para apoiar o sucesso da sua campanha! 📢✨";
-
-            // Create messages in the chat room
-            \App\Models\Message::create([
-                'chat_room_id' => $chatRoom->id,
-                'sender_id' => $brand->id,
-                'message' => $creatorMessage,
-                'message_type' => 'text',
-                'is_system_message' => true,
-            ]);
-
-            \App\Models\Message::create([
-                'chat_room_id' => $chatRoom->id,
-                'sender_id' => $brand->id,
-                'message' => $brandMessage,
-                'message_type' => 'text',
-                'is_system_message' => true,
-            ]);
-
-            // Send automatic quote message
-            $quoteMessage = "💼 **Detalhes da Campanha:**\n\n" .
-                "**Orçamento:** {$contract->formatted_budget}\n" .
-                "**Duração:** {$contract->estimated_days} dias\n" .
-                "**Status:** 🟢 Ativa\n\n" .
-                "A campanha está agora ativa e ambas as partes podem começar a trabalhar juntas. **Use o chat para todas as comunicações** e siga as diretrizes da plataforma para uma parceria de sucesso.";
-
-            \App\Models\Message::create([
-                'chat_room_id' => $chatRoom->id,
-                'sender_id' => $brand->id,
-                'message' => $quoteMessage,
-                'message_type' => 'text',
-                'is_system_message' => true,
-            ]);
-
-            Log::info('Approval messages sent successfully', [
+            // Create system message for contract completion
+            $this->createSystemMessage($chatRoom, "🎉 Contrato finalizado com sucesso! O projeto foi concluído e está aguardando avaliação.", [
                 'contract_id' => $contract->id,
-                'chat_room_id' => $chatRoom->id,
-                'brand_id' => $brand->id,
-                'creator_id' => $creator->id,
+                'status' => 'completed',
+                'workflow_status' => 'waiting_review',
+                'message_type' => 'contract_completed',
+            ]);
+
+            // Emit Socket.IO event for real-time updates
+            $this->emitSocketEvent('contract_completed', [
+                'roomId' => $chatRoom->room_id,
+                'contractData' => [
+                    'id' => $contract->id,
+                    'title' => $contract->title,
+                    'description' => $contract->description,
+                    'status' => $contract->status,
+                    'workflow_status' => $contract->workflow_status,
+                    'brand_id' => $contract->brand_id,
+                    'creator_id' => $contract->creator_id,
+                    'can_be_completed' => $contract->canBeCompleted(),
+                    'can_be_cancelled' => $contract->canBeCancelled(),
+                    'can_be_terminated' => $contract->canBeTerminated(),
+                    'can_be_started' => $contract->canBeStarted(),
+                    'budget' => $contract->formatted_budget,
+                    'creator_amount' => $contract->formatted_creator_amount,
+                    'platform_fee' => $contract->formatted_platform_fee,
+                    'estimated_days' => $contract->estimated_days,
+                    'started_at' => $contract->started_at?->format('Y-m-d H:i:s'),
+                    'expected_completion_at' => $contract->expected_completion_at?->format('Y-m-d H:i:s'),
+                    'completed_at' => $contract->completed_at?->format('Y-m-d H:i:s'),
+                    'days_until_completion' => $contract->days_until_completion,
+                    'progress_percentage' => $contract->progress_percentage,
+                    'is_overdue' => $contract->isOverdue(),
+                    'is_near_completion' => $contract->is_near_completion,
+                    'can_review' => true,
+                ],
+                'senderId' => 0, // System message
             ]);
 
         } catch (\Exception $e) {
@@ -174,6 +257,7 @@ class ContractController extends Controller
                     'is_near_completion' => $contract->is_near_completion,
                     'can_be_completed' => $contract->canBeCompleted(),
                     'can_be_cancelled' => $contract->canBeCancelled(),
+                    'can_be_terminated' => $contract->canBeTerminated(),
                     'can_be_started' => $contract->canBeStarted(),
                     'is_waiting_for_review' => $contract->isWaitingForReview(),
                     'is_payment_available' => $contract->isPaymentAvailable(),
@@ -199,11 +283,11 @@ class ContractController extends Controller
                         'platform_fee' => $contract->payment->formatted_platform_fee,
                         'processed_at' => $contract->payment->processed_at?->format('Y-m-d H:i:s'),
                     ] : null,
-                    'review' => $contract->review ? [
-                        'id' => $contract->review->id,
-                        'rating' => $contract->review->rating,
-                        'comment' => $contract->review->comment,
-                        'created_at' => $contract->review->created_at->format('Y-m-d H:i:s'),
+                    'review' => ($userReview = $contract->userReview($user->id)->first()) ? [
+                        'id' => $userReview->id,
+                        'rating' => $userReview->rating,
+                        'comment' => $userReview->comment,
+                        'created_at' => $userReview->created_at->format('Y-m-d H:i:s'),
                     ] : null,
                     'created_at' => $contract->created_at->format('Y-m-d H:i:s'),
                 ];
@@ -273,12 +357,14 @@ class ContractController extends Controller
                 'is_near_completion' => $contract->is_near_completion,
                 'can_be_completed' => $contract->can_be_completed,
                 'can_be_cancelled' => $contract->can_be_cancelled,
+                'can_be_terminated' => $contract->canBeTerminated(),
                 'is_waiting_for_review' => $contract->isWaitingForReview(),
                 'is_payment_available' => $contract->isPaymentAvailable(),
                 'is_payment_withdrawn' => $contract->isPaymentWithdrawn(),
                 'has_brand_review' => $contract->has_brand_review,
                 'has_creator_review' => $contract->has_creator_review,
                 'has_both_reviews' => $contract->has_both_reviews,
+                'can_review' => !$contract->has_creator_review, // Creator can review if they haven't reviewed yet
                 'creator' => [
                     'id' => $contract->creator->id,
                     'name' => $contract->creator->name,
@@ -297,11 +383,11 @@ class ContractController extends Controller
                     'platform_fee' => $contract->payment->formatted_platform_fee,
                     'processed_at' => $contract->payment->processed_at?->format('Y-m-d H:i:s'),
                 ] : null,
-                'review' => $contract->review ? [
-                    'id' => $contract->review->id,
-                    'rating' => $contract->review->rating,
-                    'comment' => $contract->review->comment,
-                    'created_at' => $contract->review->created_at->format('Y-m-d H:i:s'),
+                'review' => ($userReview = $contract->userReview($user->id)->first()) ? [
+                    'id' => $userReview->id,
+                    'rating' => $userReview->rating,
+                    'comment' => $userReview->comment,
+                    'created_at' => $userReview->created_at->format('Y-m-d H:i:s'),
                 ] : null,
                 'created_at' => $contract->created_at->format('Y-m-d H:i:s'),
             ];
@@ -379,6 +465,7 @@ class ContractController extends Controller
                     'is_near_completion' => $contract->is_near_completion,
                     'can_be_completed' => $contract->canBeCompleted(),
                     'can_be_cancelled' => $contract->canBeCancelled(),
+                    'can_be_terminated' => $contract->canBeTerminated(),
                     'can_be_started' => $contract->canBeStarted(),
                     'has_brand_review' => $contract->has_brand_review,
                     'has_creator_review' => $contract->has_creator_review,
@@ -400,13 +487,13 @@ class ContractController extends Controller
                         'creator_amount' => $contract->payment->formatted_creator_amount,
                         'platform_fee' => $contract->payment->formatted_platform_fee,
                         'processed_at' => $contract->payment->processed_at?->format('Y-m-d H:i:s'),
-                    ] : null,
-                    'review' => $contract->review ? [
-                        'id' => $contract->review->id,
-                        'rating' => $contract->review->rating,
-                        'comment' => $contract->review->comment,
-                        'created_at' => $contract->review->created_at->format('Y-m-d H:i:s'),
-                    ] : null,
+                                    ] : null,
+                'review' => ($userReview = $contract->userReview($user->id)->first()) ? [
+                    'id' => $userReview->id,
+                    'rating' => $userReview->rating,
+                    'comment' => $userReview->comment,
+                    'created_at' => $userReview->created_at->format('Y-m-d H:i:s'),
+                ] : null,
                     'created_at' => $contract->created_at->format('Y-m-d H:i:s'),
                 ];
             });
@@ -483,13 +570,14 @@ class ContractController extends Controller
                     'status' => $contract->status,
                     'workflow_status' => $contract->workflow_status,
                     'brand_id' => $contract->brand_id,
-                    'creator_id' => $contract->creator_id,
-                    'can_be_completed' => $contract->canBeCompleted(),
-                    'can_be_cancelled' => $contract->canBeCancelled(),
-                    'can_be_started' => $contract->canBeStarted(),
-                    'budget' => $contract->formatted_budget,
-                    'creator_amount' => $contract->formatted_creator_amount,
-                    'platform_fee' => $contract->formatted_platform_fee,
+                                            'creator_id' => $contract->creator_id,
+                        'can_be_completed' => $contract->canBeCompleted(),
+                        'can_be_cancelled' => $contract->canBeCancelled(),
+                        'can_be_terminated' => $contract->canBeTerminated(),
+                        'can_be_started' => $contract->canBeStarted(),
+                        'budget' => $contract->formatted_budget,
+                        'creator_amount' => $contract->formatted_creator_amount,
+                        'platform_fee' => $contract->formatted_platform_fee,
                     'estimated_days' => $contract->estimated_days,
                     'started_at' => $contract->started_at?->format('Y-m-d H:i:s'),
                     'expected_completion_at' => $contract->expected_completion_at?->format('Y-m-d H:i:s'),
@@ -541,6 +629,14 @@ class ContractController extends Controller
 
         // Check if user is a brand
         if (!$user->isBrand()) {
+            Log::warning('Non-brand user attempted to complete contract', [
+                'user_id' => $user->id,
+                'user_role' => $user->role,
+                'contract_id' => $id,
+                'is_brand' => $user->isBrand(),
+                'is_creator' => $user->isCreator(),
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Apenas marcas podem finalizar contratos',
@@ -567,6 +663,9 @@ class ContractController extends Controller
             }
 
             if ($contract->complete()) {
+                // Send chat message about contract completion
+                $this->sendContractCompletionMessage($contract, $user);
+
                 // Emit Socket.IO event for real-time updates
                 $this->emitSocketEvent('contract_completed', [
                     'roomId' => $contract->offer->chatRoom->room_id ?? null,
@@ -597,11 +696,12 @@ class ContractController extends Controller
                     'senderId' => $user->id,
                 ]);
 
-                            Log::info('Campaign completed successfully', [
-                'contract_id' => $contract->id,
-                'brand_id' => $user->id,
-                'creator_id' => $contract->creator_id,
-            ]);
+                Log::info('Campaign completed successfully', [
+                    'contract_id' => $contract->id,
+                    'brand_id' => $user->id,
+                    'creator_id' => $contract->creator_id,
+                    'chat_message_sent' => true,
+                ]);
 
                 return response()->json([
                     'success' => true,
@@ -759,6 +859,37 @@ class ContractController extends Controller
             }
 
             if ($contract->terminate($request->reason)) {
+                // Get the chat room to send termination message
+                $chatRoom = $contract->offer->chatRoom ?? null;
+                
+                if ($chatRoom) {
+                    // Create chat message for contract termination
+                    $this->createOfferChatMessage($chatRoom, 'contract_terminated', [
+                        'sender_id' => $user->id,
+                        'message' => $request->reason ? 
+                            "Contrato terminado pela marca. Motivo: " . $request->reason :
+                            "Contrato terminado pela marca.",
+                        'offer_data' => [
+                            'contract_id' => $contract->id,
+                            'title' => $contract->title,
+                            'description' => $contract->description,
+                            'status' => $contract->status,
+                            'workflow_status' => $contract->workflow_status,
+                            'budget' => $contract->budget,
+                            'formatted_budget' => $contract->formatted_budget,
+                            'estimated_days' => $contract->estimated_days,
+                            'cancelled_at' => $contract->cancelled_at?->format('Y-m-d H:i:s'),
+                            'cancellation_reason' => $contract->cancellation_reason,
+                            'termination_type' => 'brand_terminated',
+                            'sender' => [
+                                'id' => $user->id,
+                                'name' => $user->name,
+                                'avatar_url' => $user->avatar_url,
+                            ],
+                        ],
+                    ]);
+                }
+                
                 // Emit Socket.IO event for real-time updates
                 $this->emitSocketEvent('contract_terminated', [
                     'roomId' => $contract->offer->chatRoom->room_id ?? null,

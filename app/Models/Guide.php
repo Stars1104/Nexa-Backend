@@ -13,11 +13,16 @@ class Guide extends Model
         'description',
         'video_path',
         'video_mime',
+        'screenshots',
         'created_by',
     ];
 
+    protected $casts = [
+        'screenshots' => 'array',
+    ];
+
     // append virtual attribute if you want direct url in model arrays
-    protected $appends = ['video_url'];
+    protected $appends = ['video_url', 'screenshot_urls'];
 
     public function getVideoUrlAttribute()
     {
@@ -26,6 +31,17 @@ class Guide extends Model
         }
         // Storage::url uses the default disk; for 'public' disk it will generate /storage/...
         return Storage::url($this->video_path);
+    }
+
+    public function getScreenshotUrlsAttribute()
+    {
+        if (! $this->screenshots || ! is_array($this->screenshots)) {
+            return [];
+        }
+        
+        return array_map(function ($path) {
+            return Storage::url($path);
+        }, $this->screenshots);
     }
 
     // optional: relationship to user if you store created_by

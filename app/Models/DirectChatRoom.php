@@ -70,6 +70,7 @@ class DirectChatRoom extends Model
                 'room_id' => $roomId,
                 'is_active' => true,
                 'connection_request_id' => $connectionRequestId,
+                'last_message_at' => now(), // Set to current time for new rooms
             ]
         );
     }

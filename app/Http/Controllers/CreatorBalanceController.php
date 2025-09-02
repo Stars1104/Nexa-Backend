@@ -305,11 +305,11 @@ class CreatorBalanceController extends Controller
 
         try {
             $contracts = $user->creatorContracts()
-                ->with(['brand:id,name,avatar_url', 'payment', 'review'])
+                ->with(['brand:id,name,avatar_url', 'payment'])
                 ->orderBy('created_at', 'desc')
                 ->paginate(10);
 
-            $contracts->getCollection()->transform(function ($contract) {
+            $contracts->getCollection()->transform(function ($contract) use ($user) {
                 return [
                     'id' => $contract->id,
                     'title' => $contract->title,
@@ -329,10 +329,10 @@ class CreatorBalanceController extends Controller
                         'amount' => $contract->payment->formatted_creator_amount,
                         'processed_at' => $contract->payment->processed_at?->format('Y-m-d H:i:s'),
                     ] : null,
-                    'review' => $contract->review ? [
-                        'rating' => $contract->review->rating,
-                        'comment' => $contract->review->comment,
-                        'created_at' => $contract->review->created_at->format('Y-m-d H:i:s'),
+                    'review' => ($userReview = $contract->userReview($user->id)->first()) ? [
+                        'rating' => $userReview->rating,
+                        'comment' => $userReview->comment,
+                        'created_at' => $userReview->created_at->format('Y-m-d H:i:s'),
                     ] : null,
                 ];
             });

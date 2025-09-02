@@ -67,6 +67,7 @@ class PagarMeAuthController extends Controller
                     'password' => Hash::make(Str::random(32)), // Generate random password
                     'role' => 'creator', // Default role for pagar.me users
                     'email_verified_at' => now(), // Auto-verify email for pagar.me users
+                    // gender and birth_date will use default values from model
                 ]);
 
                 Log::info('New user created via Pagar.me authentication', [

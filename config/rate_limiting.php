@@ -36,7 +36,7 @@ return [
             'decay_minutes' => 1,    // Time window in minutes
         ],
         'notifications' => [
-            'attempts' => 300,       // Notification requests per minute per user
+            'attempts' => 600,       // Increased from 300 to 600 requests per minute per user
             'decay_minutes' => 1,    // Time window in minutes
         ],
         'user_status' => [

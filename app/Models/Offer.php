@@ -16,6 +16,7 @@ class Offer extends Model
     protected $fillable = [
         'brand_id',
         'creator_id',
+        'campaign_id',
         'chat_room_id',
         'title',
         'description',
@@ -27,6 +28,8 @@ class Offer extends Model
         'accepted_at',
         'rejected_at',
         'rejection_reason',
+        'is_barter',
+        'barter_description',
     ];
 
     protected $casts = [
@@ -35,6 +38,7 @@ class Offer extends Model
         'expires_at' => 'datetime',
         'accepted_at' => 'datetime',
         'rejected_at' => 'datetime',
+        'is_barter' => 'boolean',
     ];
 
     // Relationships
@@ -51,6 +55,11 @@ class Offer extends Model
     public function chatRoom(): BelongsTo
     {
         return $this->belongsTo(ChatRoom::class);
+    }
+
+    public function campaign(): BelongsTo
+    {
+        return $this->belongsTo(Campaign::class);
     }
 
     public function contract(): HasOne
@@ -95,6 +104,16 @@ class Offer extends Model
     public function isPending(): bool
     {
         return $this->status === 'pending';
+    }
+
+    public function isBarter(): bool
+    {
+        return $this->is_barter === true;
+    }
+
+    public function isCash(): bool
+    {
+        return $this->is_barter === false;
     }
 
     public function isAccepted(): bool
@@ -163,7 +182,35 @@ class Offer extends Model
                 'accepted_at' => now(),
             ]);
 
-            // Calculate platform fee (10%) and creator amount (90%)
+            // For barter offers, no payment processing is needed
+            if ($this->isBarter()) {
+                // Create contract without payment processing
+                $contract = Contract::create([
+                    'offer_id' => $this->id,
+                    'brand_id' => $this->brand_id,
+                    'creator_id' => $this->creator_id,
+                    'title' => $this->title ?? 'Contrato de Permuta',
+                    'description' => $this->description ?? 'Contrato criado a partir de oferta de permuta',
+                    'budget' => 0, // No budget for barter
+                    'platform_fee' => 0,
+                    'creator_amount' => 0,
+                    'estimated_days' => $this->estimated_days,
+                    'requirements' => $this->requirements ?? [],
+                    'started_at' => now(),
+                    'expected_completion_at' => now()->addDays($this->estimated_days),
+                    'status' => 'active', // Set to active for barter contracts
+                    'workflow_status' => 'active',
+                ]);
+
+                if (!$contract) {
+                    throw new \Exception('Failed to create barter contract');
+                }
+
+                \Illuminate\Support\Facades\DB::commit();
+                return true;
+            }
+
+            // Calculate platform fee (10%) and creator amount (90%) for cash offers
             $platformFee = $this->budget * 0.10;
             $creatorAmount = $this->budget * 0.90;
 

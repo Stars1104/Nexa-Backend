@@ -18,6 +18,7 @@ class Campaign extends Model
         'description',
         'budget',
         'remuneration_type',
+
         'final_price',
         'location',
         'requirements',
@@ -49,6 +50,7 @@ class Campaign extends Model
         'approved_at' => 'datetime',
         'is_active' => 'boolean',
         'is_featured' => 'boolean',
+
         'budget' => 'decimal:2',
         'final_price' => 'decimal:2',
     ];

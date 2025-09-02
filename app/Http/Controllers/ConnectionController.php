@@ -203,12 +203,14 @@ class ConnectionController extends Controller
         if ($user->isBrand()) {
             $directChatRooms = DirectChatRoom::where('brand_id', $user->id)
                 ->with(['creator', 'lastMessage.sender'])
-                ->orderBy('last_message_at', 'desc')
+                ->orderBy('created_at', 'desc') // Newest rooms first
+                ->orderBy('last_message_at', 'desc') // Then by last message
                 ->get();
         } elseif ($user->isCreator()) {
             $directChatRooms = DirectChatRoom::where('creator_id', $user->id)
                 ->with(['brand', 'lastMessage.sender'])
-                ->orderBy('last_message_at', 'desc')
+                ->orderBy('created_at', 'desc') // Newest rooms first
+                ->orderBy('last_message_at', 'desc') // Then by last message
                 ->get();
         }
 
@@ -231,13 +233,13 @@ class ConnectionController extends Controller
                     'message_type' => $lastMessage->message_type,
                     'sender_id' => $lastMessage->sender_id,
                     'is_sender' => $lastMessage->sender_id === $user->id,
-                    'created_at' => $lastMessage->created_at->format('Y-m-d H:i:s'),
+                    'created_at' => $lastMessage->created_at->toISOString(),
                 ] : null,
                 'unread_count' => $room->messages()
                     ->where('sender_id', '!=', $user->id)
                     ->where('is_read', false)
                     ->count(),
-                'last_message_at' => $room->last_message_at?->format('Y-m-d H:i:s'),
+                'last_message_at' => $room->last_message_at?->toISOString(),
             ];
         });
 
@@ -294,8 +296,8 @@ class ConnectionController extends Controller
                     'sender_avatar' => $message->sender->avatar_url,
                     'is_sender' => $message->sender_id === $user->id,
                     'is_read' => $message->is_read,
-                    'read_at' => $message->read_at?->format('Y-m-d H:i:s'),
-                    'created_at' => $message->created_at->format('Y-m-d H:i:s'),
+                    'read_at' => $message->read_at?->toISOString(),
+                    'created_at' => $message->created_at->toISOString(),
                 ];
             });
 

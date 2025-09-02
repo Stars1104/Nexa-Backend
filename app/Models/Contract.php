@@ -75,6 +75,22 @@ class Contract extends Model
         return $this->hasMany(Review::class);
     }
 
+    // User-specific review relationships
+    public function userReview($userId): HasOne
+    {
+        return $this->hasOne(Review::class)->where('reviewer_id', $userId);
+    }
+
+    public function brandReview(): HasOne
+    {
+        return $this->hasOne(Review::class)->where('reviewer_id', $this->brand_id);
+    }
+
+    public function creatorReview(): HasOne
+    {
+        return $this->hasOne(Review::class)->where('reviewer_id', $this->creator_id);
+    }
+
     public function payment(): HasOne
     {
         return $this->hasOne(JobPayment::class);

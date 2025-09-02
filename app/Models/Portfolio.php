@@ -16,10 +16,15 @@ class Portfolio extends Model
         'title',
         'bio',
         'profile_picture',
+        'project_links',
     ];
 
     protected $appends = [
         'profile_picture_url',
+    ];
+
+    protected $casts = [
+        'project_links' => 'array',
     ];
 
     // Relationships

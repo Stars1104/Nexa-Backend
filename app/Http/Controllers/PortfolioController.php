@@ -92,7 +92,39 @@ class PortfolioController extends Controller
             'title' => 'nullable|string|max:255',
             'bio' => 'nullable|string|max:500',
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg|max:5120', // 5MB
+            'project_links' => 'nullable|json',
         ]);
+
+        // Custom validation for project links after JSON decode
+        if ($request->has('project_links')) {
+            $projectLinks = $request->input('project_links');
+            if (is_string($projectLinks)) {
+                $projectLinks = json_decode($projectLinks, true);
+            }
+            if (is_array($projectLinks)) {
+                foreach ($projectLinks as $link) {
+                    if (is_array($link)) {
+                        // New object structure with title and url
+                        if (!empty(trim($link['url'] ?? '')) && !filter_var($link['url'], FILTER_VALIDATE_URL)) {
+                            return response()->json([
+                                'success' => false,
+                                'message' => 'Validation failed',
+                                'errors' => ['project_links' => ['Um ou mais links são inválidos']]
+                            ], 422);
+                        }
+                    } else {
+                        // Legacy string structure
+                        if (!empty(trim($link)) && !filter_var($link, FILTER_VALIDATE_URL)) {
+                            return response()->json([
+                                'success' => false,
+                                'message' => 'Validation failed',
+                                'errors' => ['project_links' => ['Um ou mais links são inválidos']]
+                            ], 422);
+                        }
+                    }
+                }
+            }
+        }
 
         if ($validator->fails()) {
             Log::error('Portfolio validation failed', $validator->errors()->toArray());
@@ -106,7 +138,40 @@ class PortfolioController extends Controller
         try {
             $portfolio = $user->portfolio()->firstOrCreate();
 
-            $data = $request->only(['title', 'bio']);
+            $data = $request->only(['title', 'bio', 'project_links']);
+
+            // Handle project links - decode JSON and filter empty values
+            if ($request->has('project_links')) {
+                $projectLinks = $request->input('project_links');
+                if (is_string($projectLinks)) {
+                    $projectLinks = json_decode($projectLinks, true);
+                }
+                if (is_array($projectLinks)) {
+                    $validLinks = [];
+                    foreach ($projectLinks as $link) {
+                        if (is_array($link)) {
+                            // New object structure with title and url
+                            if (!empty(trim($link['url'] ?? '')) && !empty(trim($link['title'] ?? ''))) {
+                                $validLinks[] = [
+                                    'title' => trim($link['title']),
+                                    'url' => trim($link['url'])
+                                ];
+                            }
+                        } else {
+                            // Legacy string structure - convert to object
+                            if (!empty(trim($link))) {
+                                $validLinks[] = [
+                                    'title' => 'Projeto ' . (count($validLinks) + 1),
+                                    'url' => trim($link)
+                                ];
+                            }
+                        }
+                    }
+                    $data['project_links'] = $validLinks;
+                } else {
+                    $data['project_links'] = null;
+                }
+            }
 
             // Handle profile picture upload
             if ($request->hasFile('profile_picture')) {
@@ -519,6 +584,7 @@ class PortfolioController extends Controller
                     'title' => $portfolio->title,
                     'bio' => $portfolio->bio,
                     'profile_picture' => $portfolio->profile_picture_url,
+                    'project_links' => $portfolio->project_links,
                     'items_count' => $portfolio->getItemsCount(),
                     'images_count' => $portfolio->getImagesCount(),
                     'videos_count' => $portfolio->getVideosCount(),

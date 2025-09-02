@@ -107,8 +107,6 @@ class GoogleController extends Controller
                     'google_id' => $googleUser->getId(),
                     'google_token' => $googleUser->token,
                     'google_refresh_token' => $googleUser->refreshToken,
-                    'student_verified' => false,
-                    'has_premium' => false,
                     'email_verified_at' => now(), // Google users are pre-verified
                 ]);
                 
@@ -215,8 +213,6 @@ class GoogleController extends Controller
                     'google_id' => $googleUser->getId(),
                     'google_token' => $googleUser->token,
                     'google_refresh_token' => $googleUser->refreshToken,
-                    'student_verified' => false,
-                    'has_premium' => false,
                     'email_verified_at' => now(),
                 ]);
                 

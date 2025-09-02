@@ -16,10 +16,15 @@ class Step extends Model
         'description', 
         'video_path',
         'video_mime',
+        'screenshots',
         'order'
     ];
 
-    protected $appends = ['video_url'];
+    protected $casts = [
+        'screenshots' => 'array',
+    ];
+
+    protected $appends = ['video_url', 'screenshot_urls'];
 
     public function guide()
     {
@@ -32,5 +37,16 @@ class Step extends Model
             return null;
         }
         return Storage::url($this->video_path);
+    }
+
+    public function getScreenshotUrlsAttribute()
+    {
+        if (! $this->screenshots || ! is_array($this->screenshots)) {
+            return [];
+        }
+        
+        return array_map(function ($path) {
+            return Storage::url($path);
+        }, $this->screenshots);
     }
 }

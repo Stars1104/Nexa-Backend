@@ -285,6 +285,21 @@ class Notification extends Model
         ]);
     }
 
+    public static function createContractCompleted($userId, $contractData = []): self
+    {
+        $contractTitle = $contractData["contract_title"] ?? "Contrato Desconhecido";
+        $brandName = $contractData["brand_name"] ?? "Marca Desconhecida";
+        
+        return self::create([
+            "user_id" => $userId,
+            "type" => "contract_completed",
+            "title" => "Contrato Finalizado",
+            "message" => "O contrato \"" . $contractTitle . "\" foi finalizado por " . $brandName . " e está aguardando sua avaliação.",
+            "data" => $contractData,
+        ]);
+    }
+
+
     public static function createPaymentAvailable($userId, $paymentData = []): self
     {
         $creatorAmount = $paymentData['creator_amount'] ?? 0;
@@ -295,6 +310,21 @@ class Notification extends Model
             'title' => 'Pagamento Disponível',
             'message' => "Pagamento de R$ {$creatorAmount} está agora disponível para saque",
             'data' => $paymentData,
+        ]);
+    }
+
+    public static function createNewReview($userId, $reviewData = []): self
+    {
+        $reviewerName = $reviewData['reviewer_name'] ?? 'Usuário Desconhecido';
+        $contractTitle = $reviewData['contract_title'] ?? 'Contrato Desconhecido';
+        $rating = $reviewData['rating'] ?? 0;
+        
+        return self::create([
+            'user_id' => $userId,
+            'type' => 'new_review',
+            'title' => 'Nova Avaliação Recebida',
+            'message' => "{$reviewerName} avaliou seu trabalho no contrato '{$contractTitle}' com {$rating} estrelas.",
+            'data' => $reviewData,
         ]);
     }
 } 

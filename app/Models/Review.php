@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Services\NotificationService;
+use Illuminate\Support\Facades\Log;
 
 class Review extends Model
 {
@@ -152,25 +153,45 @@ class Review extends Model
     protected static function booted()
     {
         static::created(function ($review) {
-            // Notify creator about new review
-            NotificationService::notifyUserOfNewReview($review);
+            try {
+                // Notify creator about new review
+                NotificationService::notifyUserOfNewReview($review);
+            } catch (\Exception $e) {
+                Log::error('Failed to notify user of new review', [
+                    'review_id' => $review->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
             
-            // Update creator's average rating
-            $review->updateCreatorAverageRating();
+            try {
+                // Update creator's average rating
+                $review->updateCreatorAverageRating();
+            } catch (\Exception $e) {
+                Log::error('Failed to update creator average rating', [
+                    'review_id' => $review->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
         });
     }
 
     private function updateCreatorAverageRating(): void
     {
         $creator = $this->reviewed;
-        if (!$creator) return;
+        if (!$creator) {
+            Log::warning('Cannot update creator rating: reviewed user not found', [
+                'review_id' => $this->id,
+                'reviewed_id' => $this->reviewed_id
+            ]);
+            return;
+        }
 
         $averageRating = Review::where('reviewed_id', $creator->id)
             ->where('is_public', true)
             ->avg('rating');
 
         $creator->update([
-            'average_rating' => round($averageRating, 1),
+            'average_rating' => round($averageRating ?: 0, 1),
             'total_reviews' => Review::where('reviewed_id', $creator->id)
                 ->where('is_public', true)
                 ->count(),

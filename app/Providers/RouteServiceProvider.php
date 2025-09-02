@@ -108,6 +108,32 @@ class RouteServiceProvider extends ServiceProvider
                 ->by($request->user()?->id ?: $request->ip());
         });
 
+        // Separate rate limiting for dashboard endpoints to prevent conflicts
+        RateLimiter::for('dashboard', function (Request $request) {
+            return Limit::perMinute(200) // More lenient for dashboard data
+                ->by($request->user()?->id ?: $request->ip())
+                ->response(function () use ($request) {
+                    return response()->json([
+                        'message' => 'Dashboard rate limit exceeded. Please wait a moment.',
+                        'retry_after' => 60, // 1 minute
+                        'error_type' => 'dashboard_rate_limited'
+                    ], 429);
+                });
+        });
+
+        // Separate rate limiting for chat endpoints
+        RateLimiter::for('chat', function (Request $request) {
+            return Limit::perMinute(300) // More lenient for chat
+                ->by($request->user()?->id ?: $request->ip())
+                ->response(function () use ($request) {
+                    return response()->json([
+                        'message' => 'Chat rate limit exceeded. Please wait a moment.',
+                        'retry_after' => 60, // 1 minute
+                        'error_type' => 'chat_rate_limited'
+                    ], 429);
+                });
+        });
+
         // Add specific rate limiting for notification endpoints
         RateLimiter::for('notifications', function (Request $request) {
             $config = config('rate_limiting.api.notifications');

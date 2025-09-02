@@ -105,13 +105,13 @@ class ChatController extends Controller
                     'message_type' => $lastMessage->message_type,
                     'sender_id' => $lastMessage->sender_id,
                     'is_sender' => $lastMessage->sender_id === $user->id,
-                    'created_at' => $lastMessage->created_at->toISOString(),
+                    'created_at' => $lastMessage->created_at->format('Y-m-d H:i:s'),
                 ] : null,
                 'unread_count' => $room->messages()
                     ->where('sender_id', '!=', $user->id)
                     ->where('is_read', false)
                     ->count(),
-                'last_message_at' => $room->last_message_at?->toISOString(),
+                'last_message_at' => $room->last_message_at?->format('Y-m-d H:i:s'),
             ];
         });
 
@@ -201,19 +201,6 @@ class ChatController extends Controller
             ->orderBy('created_at', 'asc')
             ->get();
 
-        // Check for messages with null senders and log them
-        $nullSenderMessages = $messages->filter(function ($message) {
-            return $message->sender === null;
-        });
-        
-        if ($nullSenderMessages->count() > 0) {
-            \Log::warning('Found messages with null senders', [
-                'room_id' => $roomId,
-                'null_sender_message_ids' => $nullSenderMessages->pluck('id')->toArray(),
-                'null_sender_user_ids' => $nullSenderMessages->pluck('sender_id')->toArray(),
-            ]);
-        }
-
         \Log::info('Retrieved messages from database', [
             'room_id' => $roomId,
             'user_id' => $user->id,
@@ -234,16 +221,16 @@ class ChatController extends Controller
                 'file_url' => $message->file_url,
                 'formatted_file_size' => $message->formatted_file_size,
                 'sender_id' => $message->sender_id,
-                'sender_name' => $message->sender ? $message->sender->name : 'Unknown User',
-                'sender_avatar' => $message->sender ? $message->sender->avatar_url : null,
+                'sender_name' => $message->sender->name,
+                'sender_avatar' => $message->sender->avatar_url,
                 'is_sender' => $message->sender_id === $user->id,
                 'is_read' => $message->is_read,
-                'read_at' => $message->read_at?->toISOString(),
-                'created_at' => $message->created_at->toISOString(),
+                'read_at' => $message->read_at?->format('Y-m-d H:i:s'),
+                'created_at' => $message->created_at->format('Y-m-d H:i:s'),
             ];
 
-            // Add offer_data for offer messages and contract completion messages
-            if (($message->message_type === 'offer' || $message->message_type === 'contract_completion') && $message->offer_data) {
+            // Add offer_data for offer messages
+            if ($message->message_type === 'offer' && $message->offer_data) {
                 // Handle both string and array types for offer_data
                 $offerData = is_string($message->offer_data) ? json_decode($message->offer_data, true) : $message->offer_data;
                 
@@ -291,15 +278,6 @@ class ChatController extends Controller
                     }
                     
                     $messageData['offer_data'] = $offerData;
-                    
-                    // Log contract completion message data for debugging
-                    if ($message->message_type === 'contract_completion') {
-                        \Log::info('Contract completion message offer_data included', [
-                            'message_id' => $message->id,
-                            'message_type' => $message->message_type,
-                            'offer_data' => $offerData,
-                        ]);
-                    }
                 } else {
                     // Fallback if offer_data is invalid
                     $messageData['offer_data'] = null;
@@ -438,15 +416,15 @@ class ChatController extends Controller
                 'file_url' => $message->file_url,
                 'formatted_file_size' => $message->formatted_file_size,
                 'sender_id' => $message->sender_id,
-                'sender_name' => $message->sender ? $message->sender->name : 'Unknown User',
-                'sender_avatar' => $message->sender ? $message->sender->avatar_url : null,
+                'sender_name' => $message->sender->name,
+                'sender_avatar' => $message->sender->avatar_url,
                 'is_sender' => true,
                 'is_read' => false,
-                'created_at' => $message->created_at->toISOString(),
+                'created_at' => $message->created_at->format('Y-m-d H:i:s'),
             ];
 
-            // Add offer_data for offer messages and contract completion messages
-            if (($message->message_type === 'offer' || $message->message_type === 'contract_completion') && $message->offer_data) {
+            // Add offer_data for offer messages
+            if ($message->message_type === 'offer' && $message->offer_data) {
                 // Handle both string and array types for offer_data
                 $offerData = is_string($message->offer_data) ? json_decode($message->offer_data, true) : $message->offer_data;
                 
@@ -467,25 +445,25 @@ class ChatController extends Controller
                 }
             }
 
-            // Emit socket event for real-time delivery
-            $this->emitSocketEvent('new_message', [
-                'roomId' => $room->room_id,
-                'messageId' => $message->id,
-                'message' => $message->message,
-                'senderId' => $message->sender_id,
-                'senderName' => $message->sender ? $message->sender->name : 'Unknown User',
-                'senderAvatar' => $message->sender ? $message->sender->avatar_url : null,
-                'messageType' => $message->message_type,
-                'fileData' => $message->file_path ? [
-                    'file_path' => $message->file_path,
-                    'file_name' => $message->file_name,
-                    'file_size' => $message->file_size,
-                    'file_type' => $message->file_type,
-                    'file_url' => $message->file_url,
-                ] : null,
-                'offerData' => $message->offer_data ? json_decode($message->offer_data, true) : null,
-                'timestamp' => $message->created_at->toISOString(),
-            ]);
+            // Temporarily disabled backend emission to test frontend-only approach
+            // $this->emitSocketEvent('new_message', [
+            //     'roomId' => $room->room_id,
+            //     'messageId' => $message->id,
+            //     'message' => $message->message,
+            //     'senderId' => $message->sender_id,
+            //     'senderName' => $message->sender->name,
+            //     'senderAvatar' => $message->sender->avatar_url,
+            //     'messageType' => $message->message_type,
+            //     'fileData' => $message->file_path ? [
+            //         'file_path' => $message->file_path,
+            //         'file_name' => $message->file_name,
+            //         'file_size' => $message->file_path,
+            //         'file_type' => $message->file_path,
+            //         'file_url' => $message->file_url,
+            //     ] : null,
+            //     'offerData' => $message->offer_data ? json_decode($message->offer_data, true) : null,
+            //     'timestamp' => $message->created_at->toISOString(),
+            // ]);
 
             \Log::info('Message sent successfully', [
                 'message_id' => $message->id,
@@ -881,10 +859,10 @@ class ChatController extends Controller
                     'formatted_budget' => $offer->formatted_budget,
                     'estimated_days' => $offer->estimated_days,
                     'status' => 'pending',
-                    'expires_at' => $offer->expires_at->toISOString(),
+                    'expires_at' => $offer->expires_at->format('Y-m-d H:i:s'),
                     'days_until_expiry' => $offer->days_until_expiry,
                     'is_expiring_soon' => $offer->is_expiring_soon,
-                    'created_at' => $offer->created_at->toISOString(),
+                    'created_at' => $offer->created_at->format('Y-m-d H:i:s'),
                     'is_barter' => $isBarter,
                     'barter_description' => $offer->barter_description,
                     'can_be_accepted' => true,

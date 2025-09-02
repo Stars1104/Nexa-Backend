@@ -11,7 +11,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
-use App\Models\CampaignApplication;
 use App\Services\NotificationService;
 
 class OfferController extends Controller
@@ -192,7 +191,7 @@ class OfferController extends Controller
         try {
             $messageData = [
                 'chat_room_id' => $chatRoom->id,
-                'sender_id' => $data['sender_id'] ?? null, // System message
+                'sender_id' => $data['sender_id'] ?? 0, // System message
                 'message' => $data['message'] ?? '',
                 'message_type' => 'offer',
                 'offer_data' => json_encode($data['offer_data'] ?? []),
@@ -504,15 +503,6 @@ class OfferController extends Controller
                         ],
                     ]);
 
-
-                    // Add system message to notify brand that creator accepted the offer
-                    Message::create([
-                        'chat_room_id' => $chatRoom->id,
-                        'sender_id' => null, // System message
-                        'message' => 'Creator accepted the offer.',
-                        'message_type' => 'system',
-                        'is_system_message' => true,
-                    ]);
                     // Emit Socket.IO event for real-time updates
                     $this->emitSocketEvent('offer_accepted', [
                         'roomId' => $chatRoom->room_id,

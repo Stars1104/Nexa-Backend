@@ -74,6 +74,19 @@ class GuideController extends Controller
                         $stepFields['video_mime'] = $file->getMimeType();
                     }
 
+                    // Handle step screenshots if provided
+                    if (isset($stepData['screenshots']) && is_array($stepData['screenshots'])) {
+                        $screenshotPaths = [];
+                        foreach ($stepData['screenshots'] as $screenshot) {
+                            if ($screenshot instanceof \Illuminate\Http\UploadedFile) {
+                                $filename = Str::uuid()->toString() . '.' . $screenshot->getClientOriginalExtension();
+                                $path = $screenshot->storeAs('screenshots/steps', $filename, 'public');
+                                $screenshotPaths[] = $path;
+                            }
+                        }
+                        $stepFields['screenshots'] = $screenshotPaths;
+                    }
+
                     Step::create($stepFields);
                 }
             }
@@ -144,6 +157,19 @@ class GuideController extends Controller
                         
                         $stepFields['video_path'] = $path;
                         $stepFields['video_mime'] = $file->getMimeType();
+                    }
+
+                    // Handle step screenshots if provided
+                    if (isset($stepData['screenshots']) && is_array($stepData['screenshots'])) {
+                        $screenshotPaths = [];
+                        foreach ($stepData['screenshots'] as $screenshot) {
+                            if ($screenshot instanceof \Illuminate\Http\UploadedFile) {
+                                $filename = Str::uuid()->toString() . '.' . $screenshot->getClientOriginalExtension();
+                                $path = $screenshot->storeAs('screenshots/steps', $filename, 'public');
+                                $screenshotPaths[] = $path;
+                            }
+                        }
+                        $stepFields['screenshots'] = $screenshotPaths;
                     }
 
                     Step::create($stepFields);

@@ -76,18 +76,18 @@ Route::middleware(['auth:sanctum', 'throttle:user-status'])->get('/user', functi
     return $request->user();
 });
 
-// Authenticated user routes - with global API rate limiting
-Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
+// Authenticated user routes - with specific rate limiting per endpoint
+Route::middleware(['auth:sanctum'])->group(function () {
     
     // Profile management
     Route::prefix('profile')->group(function () {
-        Route::get('/', [ProfileController::class, 'show']); // Get current user profile
+        Route::get('/', [ProfileController::class, 'show'])->middleware(['throttle:dashboard']); // Get current user profile
         Route::put('/', [ProfileController::class, 'update']); // Update current user profile
     });
     
     // Brand Profile management
     Route::prefix('brand-profile')->group(function () {
-        Route::get('/', [BrandProfileController::class, 'show']); // Get brand profile
+        Route::get('/', [BrandProfileController::class, 'show'])->middleware(['throttle:dashboard']); // Get brand profile
         Route::put('/', [BrandProfileController::class, 'update']); // Update brand profile
         Route::post('/change-password', [BrandProfileController::class, 'changePassword']); // Change password
         Route::post('/avatar', [BrandProfileController::class, 'uploadAvatar']); // Upload avatar
@@ -96,15 +96,15 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     // Campaign CRUD operations (require premium for creators)
     Route::prefix('campaigns')->middleware(['premium.access'])->group(function () {
-        Route::get('/', [CampaignController::class, 'index']); // List campaigns
-        Route::get('/get-campaigns', [CampaignController::class, 'getCampaigns']); // Get campaigns with advanced filtering
-        Route::get('/get-all-campaigns', [CampaignController::class, 'getAllCampaigns']); // Get all campaigns without pagination
-        Route::get('/pending', [CampaignController::class, 'getPendingCampaigns']); // Get pending campaigns
+        Route::get('/', [CampaignController::class, 'index'])->middleware(['throttle:dashboard']); // List campaigns
+        Route::get('/get-campaigns', [CampaignController::class, 'getCampaigns'])->middleware(['throttle:dashboard']); // Get campaigns with advanced filtering
+        Route::get('/get-all-campaigns', [CampaignController::class, 'getAllCampaigns'])->middleware(['throttle:dashboard']); // Get all campaigns without pagination
+        Route::get('/pending', [CampaignController::class, 'getPendingCampaigns'])->middleware(['throttle:dashboard']); // Get pending campaigns
         Route::get('/user/{user}', [CampaignController::class, 'getUserCampaigns'])->where('user', '[0-9]+'); // Get campaigns by user
-        Route::get('/status/{status}', [CampaignController::class, 'getCampaignsByStatus'])->where('status', '[a-zA-Z]+'); // Get campaigns by status
+        Route::get('/status/{status}', [CampaignController::class, 'getCampaignsByStatus'])->middleware(['throttle:dashboard'])->where('status', '[a-zA-Z]+'); // Get campaigns by status
         Route::post('/', [CampaignController::class, 'store']); // Create campaign (Brand only)
         Route::get('/statistics', [CampaignController::class, 'statistics']); // Get statistics
-        Route::get('/favorites', [CampaignController::class, 'getFavorites']); // Get favorite campaigns (Creator only)
+        Route::get('/favorites', [CampaignController::class, 'getFavorites'])->middleware(['throttle:dashboard']); // Get favorite campaigns (Creator only)
         
         // Specific campaign operations (must come before {campaign} route)
         Route::patch('/{campaign}/approve', [CampaignController::class, 'approve']); // Approve campaign (Admin only)
@@ -123,7 +123,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     
     // Bid CRUD operations (require premium for creators)
     Route::prefix('bids')->middleware(['premium.access'])->group(function () {
-        Route::get('/', [BidController::class, 'index']); // List bids
+        Route::get('/', [BidController::class, 'index'])->middleware(['throttle:dashboard']); // List bids
         Route::get('/{bid}', [BidController::class, 'show'])->where('bid', '[0-9]+'); // View bid
         Route::put('/{bid}', [BidController::class, 'update'])->where('bid', '[0-9]+'); // Update bid (Creator only)
         Route::delete('/{bid}', [BidController::class, 'destroy'])->where('bid', '[0-9]+'); // Delete bid (Creator only)
@@ -141,7 +141,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     
     // Campaign Application CRUD operations (require premium for creators)
     Route::prefix('applications')->middleware(['premium.access'])->group(function () {
-        Route::get('/', [CampaignApplicationController::class, 'index']); // List applications (role-based)
+        Route::get('/', [CampaignApplicationController::class, 'index'])->middleware(['throttle:dashboard']); // List applications (role-based)
         Route::get('/statistics', [CampaignApplicationController::class, 'statistics']); // Get application statistics
         Route::get('/{application}', [CampaignApplicationController::class, 'show'])->where('application', '[0-9]+'); // View application
         Route::post('/{application}/approve', [CampaignApplicationController::class, 'approve'])->where('application', '[0-9]+'); // Approve application (Brand only)
@@ -157,7 +157,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     
     // Chat room management (available to all authenticated users)
     Route::prefix('chat')->group(function () {
-        Route::get('/rooms', [ChatController::class, 'getChatRooms']); // Get user's chat rooms
+        Route::get('/rooms', [ChatController::class, 'getChatRooms'])->middleware(['throttle:chat']); // Get user's chat rooms
         Route::get('/rooms/{roomId}/messages', [ChatController::class, 'getMessages']); // Get messages for a room
         Route::post('/rooms', [ChatController::class, 'createChatRoom']); // Create chat room (brand accepts proposal)
         Route::post('/messages', [ChatController::class, 'sendMessage']); // Send a message
@@ -172,13 +172,13 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('/{requestId}/accept', [ConnectionController::class, 'acceptConnectionRequest'])->where('requestId', '[0-9]+'); // Accept connection request
         Route::post('/{requestId}/reject', [ConnectionController::class, 'rejectConnectionRequest'])->where('requestId', '[0-9]+'); // Reject connection request
         Route::post('/{requestId}/cancel', [ConnectionController::class, 'cancelConnectionRequest'])->where('requestId', '[0-9]+'); // Cancel connection request
-        Route::get('/requests', [ConnectionController::class, 'getConnectionRequests']); // Get connection requests
-        Route::get('/search-creators', [ConnectionController::class, 'searchCreators']); // Search for creators (brands only)
+        Route::get('/requests', [ConnectionController::class, 'getConnectionRequests'])->middleware(['throttle:dashboard']); // Get connection requests
+        Route::get('/search-creators', [ConnectionController::class, 'searchCreators'])->middleware(['throttle:dashboard']); // Search for creators (brands only)
     });
     
     // Direct chat management (require premium for creators)
     Route::prefix('direct-chat')->middleware(['premium.access'])->group(function () {
-        Route::get('/rooms', [ConnectionController::class, 'getDirectChatRooms']); // Get direct chat rooms
+        Route::get('/rooms', [ConnectionController::class, 'getDirectChatRooms'])->middleware(['throttle:dashboard']); // Get direct chat rooms
         Route::get('/rooms/{roomId}/messages', [ConnectionController::class, 'getDirectMessages']); // Get direct messages
         Route::post('/messages', [ConnectionController::class, 'sendDirectMessage']); // Send direct message
     });
@@ -197,13 +197,13 @@ Route::middleware(['auth:sanctum', 'throttle:notifications'])->group(function ()
 
 // Portfolio routes
 Route::middleware(['auth:sanctum', 'premium.access'])->group(function () {
-    Route::get('/portfolio', [PortfolioController::class, 'show']);
+    Route::get('/portfolio', [PortfolioController::class, 'show'])->middleware(['throttle:dashboard']);
     Route::put('/portfolio/profile', [PortfolioController::class, 'updateProfile']);
     Route::post('/portfolio/media', [PortfolioController::class, 'uploadMedia']);
     Route::put('/portfolio/items/{item}', [PortfolioController::class, 'updateItem']);
     Route::delete('/portfolio/items/{item}', [PortfolioController::class, 'deleteItem']);
     Route::post('/portfolio/reorder', [PortfolioController::class, 'reorderItems']);
-    Route::get('/portfolio/statistics', [PortfolioController::class, 'statistics']);
+    Route::get('/portfolio/statistics', [PortfolioController::class, 'statistics'])->middleware(['throttle:dashboard']);
 });
 
 // Creator profile for brands (public view)
@@ -216,11 +216,11 @@ Route::get('/subscription/plans', [SubscriptionController::class, 'getPlans']);
 
 // Payment routes
 Route::middleware(['auth:sanctum'])->group(function () {
-    Route::get('/payment/methods', [PaymentController::class, 'getPaymentMethods']);
+    Route::get('/payment/methods', [PaymentController::class, 'getPaymentMethods'])->middleware(['throttle:dashboard']);
     Route::post('/payment/methods', [PaymentController::class, 'createPaymentMethod']);
     Route::delete('/payment/methods/{cardId}', [PaymentController::class, 'deletePaymentMethod']);
     Route::post('/payment/process', [PaymentController::class, 'processPayment']);
-    Route::get('/payment/history', [PaymentController::class, 'getPaymentHistory']);
+    Route::get('/payment/history', [PaymentController::class, 'getPaymentHistory'])->middleware(['throttle:dashboard']);
     
     // Subscription routes
     Route::middleware(['throttle:payment'])->group(function () {
@@ -229,11 +229,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
     
     // Subscription management routes
-    Route::get('/subscription/history', [SubscriptionController::class, 'getSubscriptionHistory']);
+    Route::get('/subscription/history', [SubscriptionController::class, 'getSubscriptionHistory'])->middleware(['throttle:dashboard']);
     Route::post('/subscription/cancel', [SubscriptionController::class, 'cancelSubscription']);
     
     // Payment transaction history (requires authentication)
-    Route::get('/payment/transactions', [PaymentController::class, 'getTransactionHistory']);
+    Route::get('/payment/transactions', [PaymentController::class, 'getTransactionHistory'])->middleware(['throttle:dashboard']);
     
     // Freelancer payment routes
     Route::prefix('freelancer')->group(function () {
@@ -271,6 +271,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Offer routes
     Route::prefix('offers')->group(function () {
         Route::post('/', [OfferController::class, 'store']); // Create offer
+        Route::post('/initial', [OfferController::class, 'sendInitialOffer']); // Send initial offer automatically
+        Route::post('/new-partnership', [OfferController::class, 'sendNewPartnershipOffer']); // Send new partnership offer
+        Route::post('/renewal', [OfferController::class, 'sendRenewalOffer']); // Send renewal offer after contract completion
         Route::get('/', [OfferController::class, 'index']); // Get offers
         Route::get('/{id}', [OfferController::class, 'show'])->where('id', '[0-9]+'); // Get specific offer
         Route::post('/{id}/accept', [OfferController::class, 'accept'])->where('id', '[0-9]+'); // Accept offer
@@ -293,7 +296,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     
     // Campaign Timeline routes
     Route::prefix('campaign-timeline')->group(function () {
-        Route::get('/', [CampaignTimelineController::class, 'index']); // Get timeline for contract
+        Route::get('/', [CampaignTimelineController::class, 'index'])->middleware(['throttle:dashboard']); // Get timeline for contract
         Route::post('/create-milestones', [CampaignTimelineController::class, 'createMilestones']); // Create milestones for contract
         Route::post('/upload-file', [CampaignTimelineController::class, 'uploadFile']); // Upload file for milestone
         Route::post('/approve-milestone', [CampaignTimelineController::class, 'approveMilestone']); // Approve milestone
@@ -303,24 +306,24 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/mark-delayed', [CampaignTimelineController::class, 'markAsDelayed']); // Mark as delayed
         Route::post('/extend-timeline', [CampaignTimelineController::class, 'extendTimeline']); // Extend timeline
         Route::get('/download-file', [CampaignTimelineController::class, 'downloadFile']); // Download file
-        Route::get('/statistics', [CampaignTimelineController::class, 'getStatistics']); // Get timeline statistics
+        Route::get('/statistics', [CampaignTimelineController::class, 'getStatistics'])->middleware(['throttle:dashboard']); // Get timeline statistics
         Route::post('/check-delay-warnings', [CampaignTimelineController::class, 'checkAndSendDelayWarnings']); // Check and send delay warnings
     });
     
     // Delivery Material routes
     Route::prefix('delivery-materials')->group(function () {
-        Route::get('/', [DeliveryMaterialController::class, 'index']); // Get delivery materials for contract
+        Route::get('/', [DeliveryMaterialController::class, 'index'])->middleware(['throttle:dashboard']); // Get delivery materials for contract
         Route::post('/', [DeliveryMaterialController::class, 'store']); // Submit delivery material
         Route::post('/{material}/approve', [DeliveryMaterialController::class, 'approve'])->where('material', '[0-9]+'); // Approve delivery material
         Route::post('/{material}/reject', [DeliveryMaterialController::class, 'reject'])->where('material', '[0-9]+'); // Reject delivery material
         Route::get('/{material}/download', [DeliveryMaterialController::class, 'download'])->where('material', '[0-9]+'); // Download delivery material
-        Route::get('/statistics', [DeliveryMaterialController::class, 'getStatistics']); // Get delivery material statistics
+        Route::get('/statistics', [DeliveryMaterialController::class, 'getStatistics'])->middleware(['throttle:dashboard']); // Get delivery material statistics
     });
     
     // Review routes
     Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/reviews', [ReviewController::class, 'store']);
-        Route::get('/reviews', [ReviewController::class, 'index']);
+        Route::get('/reviews', [ReviewController::class, 'index'])->middleware(['throttle:dashboard']);
         Route::get('/reviews/{id}', [ReviewController::class, 'show'])->where('id', '[0-9]+');
         Route::put('/reviews/{id}', [ReviewController::class, 'update'])->where('id', '[0-9]+');
         Route::delete('/reviews/{id}', [ReviewController::class, 'destroy'])->where('id', '[0-9]+');
@@ -329,26 +332,26 @@ Route::middleware(['auth:sanctum'])->group(function () {
     
     // Creator balance routes
     Route::prefix('creator-balance')->group(function () {
-        Route::get('/', [CreatorBalanceController::class, 'index']); // Get balance
-        Route::get('/history', [CreatorBalanceController::class, 'history']); // Get balance history
-        Route::get('/withdrawal-methods', [CreatorBalanceController::class, 'withdrawalMethods']); // Get withdrawal methods
-        Route::get('/work-history', [CreatorBalanceController::class, 'workHistory']); // Get work history
+        Route::get('/', [CreatorBalanceController::class, 'index'])->middleware(['throttle:dashboard']); // Get balance
+        Route::get('/history', [CreatorBalanceController::class, 'history'])->middleware(['throttle:dashboard']); // Get balance history
+        Route::get('/withdrawal-methods', [CreatorBalanceController::class, 'withdrawalMethods'])->middleware(['throttle:dashboard']); // Get withdrawal methods
+        Route::get('/work-history', [CreatorBalanceController::class, 'workHistory'])->middleware(['throttle:dashboard']); // Get work history
     });
     
     // Withdrawal routes
     Route::prefix('withdrawals')->group(function () {
         Route::post('/', [WithdrawalController::class, 'store']); // Create withdrawal
-        Route::get('/', [WithdrawalController::class, 'index']); // Get withdrawals
+        Route::get('/', [WithdrawalController::class, 'index'])->middleware(['throttle:dashboard']); // Get withdrawals
         Route::get('/{id}', [WithdrawalController::class, 'show'])->where('id', '[0-9]+'); // Get specific withdrawal
         Route::delete('/{id}', [WithdrawalController::class, 'cancel'])->where('id', '[0-9]+'); // Cancel withdrawal
-        Route::get('/statistics', [WithdrawalController::class, 'statistics']); // Get withdrawal statistics
+        Route::get('/statistics', [WithdrawalController::class, 'statistics'])->middleware(['throttle:dashboard']); // Get withdrawal statistics
     });
     
     // Post-contract workflow routes
     Route::prefix('post-contract')->group(function () {
-        Route::get('/waiting-review', [PostContractWorkflowController::class, 'getContractsWaitingForReview']); // Get contracts waiting for review
-        Route::get('/payment-available', [PostContractWorkflowController::class, 'getContractsWithPaymentAvailable']); // Get contracts with payment available
-        Route::get('/work-history', [PostContractWorkflowController::class, 'getWorkHistory']); // Get work history
+        Route::get('/waiting-review', [PostContractWorkflowController::class, 'getContractsWaitingForReview'])->middleware(['throttle:dashboard']); // Get contracts waiting for review
+        Route::get('/payment-available', [PostContractWorkflowController::class, 'getContractsWithPaymentAvailable'])->middleware(['throttle:dashboard']); // Get contracts with payment available
+        Route::get('/work-history', [PostContractWorkflowController::class, 'getWorkHistory'])->middleware(['throttle:dashboard']); // Get work history
     });
     
     // Public guide routes (read-only for authenticated users)

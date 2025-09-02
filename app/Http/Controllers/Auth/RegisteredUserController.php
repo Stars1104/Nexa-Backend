@@ -30,6 +30,7 @@ class RegisteredUserController extends Controller
             'has_avatar' => $request->hasFile('avatar_url'),
             'request_method' => $request->method(),
             'input_keys' => array_keys($request->all()),
+            'all_data' => $request->all(),
         ]);
 
         $request->validate([
@@ -38,7 +39,7 @@ class RegisteredUserController extends Controller
                 'string', 
                 'max:255',
                 'min:2',
-                'regex:/^[a-zA-Z\s\-\.\']+$/'
+                'regex:/^[a-zA-Z0-9\s\-\.\']+$/'
             ],
             'email' => [
                 'required', 
@@ -64,7 +65,6 @@ class RegisteredUserController extends Controller
                 'max:20'
             ],
             'whatsapp' => [
-                'required',
                 'nullable', 
                 'string', 
                 'max:20',
@@ -142,6 +142,8 @@ class RegisteredUserController extends Controller
 
         // Additional custom validation logic
         $this->validateCustomRules($request);
+        
+        \Log::info('Validation passed successfully');
 
         // Handle avatar upload
         $avatarUrl = null;
@@ -157,6 +159,14 @@ class RegisteredUserController extends Controller
             \Log::info('No avatar file in request');
         }
 
+        \Log::info('About to create user with data', [
+            'name' => trim($request->name),
+            'email' => strtolower(trim($request->email)),
+            'role' => $request->role ?? 'creator',
+            'gender' => $request->gender ?? 'other',
+            'birth_date' => $request->birth_date ?? '1990-01-01',
+        ]);
+        
         $user = User::create([
             'name' => trim($request->name),
             'email' => strtolower(trim($request->email)),
@@ -168,13 +178,16 @@ class RegisteredUserController extends Controller
             'company_name' => $request->company_name ? trim($request->company_name) : null,
             'student_verified' => false,
             'student_expires_at' => null,
-            'gender' => $request->gender,
+            'gender' => $request->gender ?? 'other',
+            'birth_date' => $request->birth_date ?? '1990-01-01',
             'state' => $request->state ? trim($request->state) : null,
             'language' => $request->language ?? 'en',
             'has_premium' => $request->has_premium ?? false,
             'premium_expires_at' => null,
             'free_trial_expires_at' => null,
         ]);
+        
+        \Log::info('User created successfully', ['user_id' => $user->id]);
 
         // Notify admin of new user registration
         \App\Services\NotificationService::notifyAdminOfNewRegistration($user);
