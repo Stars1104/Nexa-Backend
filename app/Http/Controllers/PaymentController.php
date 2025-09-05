@@ -8,6 +8,7 @@ use App\Models\Withdrawal;
 use App\Models\CreatorBalance;
 use App\Models\BankAccount;
 use App\Services\NotificationService;
+use App\Services\StripeService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Http;
@@ -20,12 +21,15 @@ class PaymentController extends Controller
     private string $apiKey;
     private string $baseUrl;
 
-    public function __construct()
+    protected $stripe;
+
+    public function __construct(StripeService $stripe)
     {
         $this->apiKey = config('services.pagarme.api_key') ?? '';
         $this->baseUrl = config('services.pagarme.environment') === 'production' 
             ? 'https://api.pagar.me/core/v5' 
             : 'https://api.pagar.me/core/v5';
+        $this->stripe = $stripe;
     }
 
     /**
@@ -33,159 +37,6 @@ class PaymentController extends Controller
      */
     public function processSubscription(Request $request): JsonResponse
     {
-        Log::info('Subscription payment request received', [
-            'request_data' => $request->except(['card_number', 'card_cvv']), // Don't log sensitive data
-            'user_agent' => $request->header('User-Agent'),
-            'ip' => $request->ip(),
-        ]);
-
-        // Log all request data for debugging (remove in production)
-        Log::info('Full subscription request data for debugging', [
-            'all_data' => $request->all(),
-            'has_card_number' => $request->has('card_number'),
-            'has_card_cvv' => $request->has('card_cvv'),
-            'has_card_holder_name' => $request->has('card_holder_name'),
-            'has_card_expiration_date' => $request->has('card_expiration_date'),
-            'has_cpf' => $request->has('cpf'),
-            'subscription_plan_id' => $request->has('subscription_plan_id'),
-        ]);
-
-        // Check if Pagar.me is configured
-        if (empty($this->apiKey)) {
-            Log::error('Pagar.me API key not configured');
-            return response()->json([
-                'success' => false,
-                'message' => 'Payment gateway not configured. Please contact support.',
-            ], 503);
-        }
-
-        // Check if we're in test mode
-        $isTestMode = config('services.pagarme.environment') === 'sandbox' && 
-                     (config('app.env') === 'local' || config('app.env') === 'development');
-        
-        Log::info('Test mode check', [
-            'pagarme_environment' => config('services.pagarme.environment'),
-            'app_env' => config('app.env'),
-            'is_test_mode' => $isTestMode
-        ]);
-
-        try {
-            $request->validate([
-                'card_number' => 'required|string|size:16',
-                'card_holder_name' => 'required|string|max:255',
-                'card_expiration_date' => 'required|string|size:4', // MMYY format
-                'card_cvv' => 'required|string|min:3|max:4',
-                'cpf' => 'required|string|regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/', // CPF format validation
-                'subscription_plan_id' => 'required|integer|exists:subscription_plans,id',
-            ]);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            Log::error('Subscription validation failed', [
-                'errors' => $e->errors(),
-                'request_data' => $request->all(),
-            ]);
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors(),
-            ], 422);
-        }
-
-        // Validate CPF
-        if (!$this->validateCPF($request->cpf)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'CPF inválido. Por favor, verifique o número.',
-                'errors' => ['cpf' => ['CPF inválido. Use um CPF válido como: 111.444.777-35']]
-            ], 422);
-        }
-
-        // If in test mode, process the payment locally
-        if ($isTestMode) {
-            Log::info('Processing subscription in test mode', [
-                'user_id' => auth()->id(),
-                'test_mode' => true
-            ]);
-            
-            try {
-                DB::beginTransaction();
-                
-                $user = auth()->user();
-                
-                // Get the selected subscription plan
-                $subscriptionPlan = \App\Models\SubscriptionPlan::find($request->subscription_plan_id);
-                if (!$subscriptionPlan) {
-                    throw new \Exception('Invalid subscription plan');
-                }
-                
-                // Calculate expiration date based on plan duration
-                $expiresAt = now()->addMonths($subscriptionPlan->duration_months);
-                
-                // Create a test transaction record
-                $transaction = Transaction::create([
-                    'user_id' => $user->id,
-                    'amount' => $subscriptionPlan->price * 100, // Convert to cents
-                    'payment_method' => 'credit_card',
-                    'status' => 'paid',
-                    'pagarme_transaction_id' => 'test_' . time(),
-                    'paid_at' => now(),
-                    'expires_at' => $expiresAt,
-                ]);
-
-                // Create subscription record
-                \App\Models\Subscription::create([
-                    'user_id' => $user->id,
-                    'subscription_plan_id' => $subscriptionPlan->id,
-                    'status' => \App\Models\Subscription::STATUS_ACTIVE,
-                    'starts_at' => now(),
-                    'expires_at' => $expiresAt,
-                    'amount_paid' => $subscriptionPlan->price,
-                    'payment_method' => 'credit_card',
-                    'transaction_id' => $transaction->id,
-                    'auto_renew' => false,
-                ]);
-
-                // Update user premium status
-                $user->update([
-                    'has_premium' => true,
-                    'premium_expires_at' => $expiresAt,
-                ]);
-
-                DB::commit();
-
-                Log::info('Test subscription successful', [
-                    'user_id' => $user->id,
-                    'transaction_id' => $transaction->id,
-                    'test_mode' => true
-                ]);
-
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Test subscription successful',
-                    'test_mode' => true,
-                    'transaction' => [
-                        'id' => $transaction->id,
-                        'status' => 'paid'
-                    ]
-                ]);
-            } catch (\Exception $e) {
-                DB::rollBack();
-                Log::error('Test subscription failed', [
-                    'user_id' => auth()->id(),
-                    'error' => $e->getMessage(),
-                    'test_mode' => true
-                ]);
-                
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Test subscription failed: ' . $e->getMessage(),
-                ], 500);
-            }
-        } else {
-            Log::info('Not in test mode, proceeding with Pagar.me API call', [
-                'test_mode' => false
-            ]);
-        }
 
         try {
             DB::beginTransaction();
@@ -240,125 +91,19 @@ class PaymentController extends Controller
                 ], 400);
             }
 
-            // Prepare payment data for Pagar.me v5
-            $paymentData = [
-                'code' => 'NEXA_PREMIUM_' . $user->id . '_' . time(),
-                'customer' => [
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'type' => 'individual',
-                    'country' => 'br',
-                    'documents' => [
-                        [
-                            'type' => 'cpf',
-                            'number' => preg_replace('/[^0-9]/', '', $request->cpf) // Remove dots and dash
-                        ]
-                    ],
-                    'phones' => [
-                        'mobile_phone' => [
-                            'country_code' => '55',
-                            'area_code' => '11',
-                            'number' => '999999999'
-                        ]
-                    ]
-                ],
-                'items' => [
-                    [
-                        'amount' => (int)($subscriptionPlan->price * 100), // Pagar.me expects amount in cents
-                        'description' => 'Nexa Premium Subscription - ' . $subscriptionPlan->name,
-                        'quantity' => 1,
-                        'code' => 'NEXA_PREMIUM_' . $subscriptionPlan->duration_months . 'M'
-                    ]
-                ],
-                'payments' => [
-                    [
-                        'payment_method' => 'credit_card',
-                        'credit_card' => [
-                            'operation_type' => 'auth_and_capture',
-                            'installments' => 1,
-                            'statement_descriptor' => 'NEXA PREMIUM',
-                            'card' => [
-                                'number' => $request->card_number,
-                                'holder_name' => $request->card_holder_name,
-                                'exp_month' => substr($request->card_expiration_date, 0, 2),
-                                'exp_year' => '20' . substr($request->card_expiration_date, 2, 2),
-                                'cvv' => $request->card_cvv,
-                            ]
-                        ]
-                    ]
-                ]
-            ];
+            // Stripe Payment here
 
-            // Make request to Pagar.me with timeout
-            try {
-                $response = Http::timeout(30)->withHeaders([
-                    'Authorization' => $this->apiKey,
-                    'Content-Type' => 'application/json',
-                    'Accept' => 'application/json',
-                ])->post($this->baseUrl . '/orders', $paymentData);
+            $paymetnIntent = $this->stripe->createPaymentBRL(
+                $subscriptionPlan->price,
+                $request->paymentMethodId
+            );
+            // return response()->json([
+            //     'success' => true,
+            //     'respose' => $paymetnIntent
+            // ]);
 
-                if (!$response->successful()) {
-                    Log::error('Pagar.me payment failed', [
-                        'user_id' => $user->id,
-                        'response' => $response->json(),
-                        'status' => $response->status()
-                    ]);
 
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Payment processing failed. Please try again.',
-                        'error' => $response->json()
-                    ], 400);
-                }
-
-                $paymentResponse = $response->json();
-            } catch (\Exception $e) {
-                Log::error('Pagar.me request exception', [
-                    'user_id' => $user->id,
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString()
-                ]);
-
-                // If it's a network timeout or connection issue, fall back to fallback mode
-                if (str_contains($e->getMessage(), 'timeout') || 
-                    str_contains($e->getMessage(), 'connection') ||
-                    str_contains($e->getMessage(), 'cURL error 28')) {
-                    
-                    Log::info('Falling back to fallback mode due to Pagar.me connectivity issues', [
-                        'user_id' => $user->id,
-                        'error' => $e->getMessage()
-                    ]);
-                    
-                    $paymentResponse = [
-                        'id' => 'fallback_order_' . time(),
-                        'status' => 'paid',
-                        'charges' => [
-                            [
-                                'id' => 'fallback_charge_' . time(),
-                                'status' => 'paid',
-                                'payment_method_details' => [
-                                    'card' => [
-                                        'brand' => 'visa',
-                                        'last_four_digits' => '1111'
-                                    ]
-                                ]
-                            ]
-                        ]
-                    ];
-                } else {
-                    DB::rollBack();
-
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Payment service temporarily unavailable. Please try again in a few moments.',
-                        'error' => $e->getMessage()
-                    ], 503);
-                }
-            }
-            $order = $paymentResponse;
-            $charge = $order['charges'][0] ?? null;
-
-            if (!$charge) {
+            if (!$paymetnIntent) {
                 Log::error('No charge found in PagarMe response', [
                     'user_id' => $user->id,
                     'response' => $paymentResponse
@@ -371,30 +116,30 @@ class PaymentController extends Controller
                 ], 400);
             }
 
-            // Calculate expiration date based on plan duration
+            // // Calculate expiration date based on plan duration
             $expiresAt = now()->addMonths($subscriptionPlan->duration_months);
             
             // Create transaction record
             $dbTransaction = Transaction::create([
                 'user_id' => $user->id,
-                'pagarme_transaction_id' => $charge['id'],
-                'status' => $charge['status'],
+                'pagarme_transaction_id' => $paymetnIntent['id'],
+                'status' => $paymetnIntent['status'],
                 'amount' => $subscriptionPlan->price, // Store as decimal, not cents
                 'payment_method' => 'credit_card',
-                'card_brand' => $charge['payment_method_details']['card']['brand'] ?? null,
-                'card_last4' => $charge['payment_method_details']['card']['last_four_digits'] ?? null,
+                // 'card_brand' => $charge['payment_method_details']['card']['brand'] ?? null,
+                // 'card_last4' => $charge['payment_method_details']['card']['last_four_digits'] ?? null,
                 'card_holder_name' => $request->card_holder_name,
-                'payment_data' => $charge,
-                'paid_at' => $charge['status'] === 'paid' ? now() : null,
-                'expires_at' => $charge['status'] === 'paid' ? $expiresAt : null,
+                'payment_data' => $paymetnIntent,
+                'paid_at' => $paymetnIntent['status'] === 'succeeded' ? now() : null,
+                'expires_at' => $paymetnIntent['status'] === 'succeeded' ? $expiresAt : null,
             ]);
 
             // Update user premium status if payment is successful
-            if ($charge['status'] === 'paid') {
+            if ($paymetnIntent['status'] === 'succeeded') {
                 Log::info('Payment successful, updating user premium status', [
                     'user_id' => $user->id,
                     'transaction_id' => $dbTransaction->id,
-                    'charge_status' => $charge['status'],
+                    'charge_status' => $paymetnIntent['status'],
                 ]);
                 
                 // Create subscription record
@@ -429,17 +174,17 @@ class PaymentController extends Controller
             Log::info('Subscription payment processed successfully', [
                 'user_id' => $user->id,
                 'transaction_id' => $dbTransaction->id,
-                'payment_status' => $charge['status'],
+                'payment_status' => $paymetnIntent['status'],
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => $charge['status'] === 'paid' 
+                'message' => $paymetnIntent['status'] === 'succeeded' 
                     ? 'Payment successful! Your premium subscription is now active.' 
                     : 'Payment is being processed.',
                 'transaction' => [
                     'id' => $dbTransaction->id,
-                    'status' => $charge['status'],
+                    'status' => $paymetnIntent['status'],
                     'amount' => $dbTransaction->amount_in_real,
                     'expires_at' => $dbTransaction->expires_at?->format('Y-m-d H:i:s'),
                 ],

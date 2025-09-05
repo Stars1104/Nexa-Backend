@@ -47,5 +47,10 @@ return [
         'environment' => env('PAGARME_ENVIRONMENT', 'sandbox'), // sandbox or production
         'account_id' => env('PAGARME_ACCOUNT_ID'),
     ],
+    
+    'stripe' => [
+        'key' => env('STRIPE_KEY'),
+        'secret' => env('STRIPE_SECRET'),
+    ],
 
 ];
