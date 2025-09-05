@@ -11,11 +11,9 @@ class BrandPaymentMethod extends Model
     use HasFactory;
 
     protected $fillable = [
-        'brand_id',
-        'pagarme_customer_id',
-        'pagarme_card_id',
-        'card_brand',
-        'card_last4',
+        'user_id',
+        'customer_id',
+        'payment_method_id',
         'card_holder_name',
         'is_default',
         'is_active',
@@ -31,7 +29,7 @@ class BrandPaymentMethod extends Model
      */
     public function brand(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'brand_id');
+        return $this->belongsTo(User::class, 'user_id');
     }
 
     /**
@@ -56,7 +54,7 @@ class BrandPaymentMethod extends Model
     public function setAsDefault(): void
     {
         // Unset other default payment methods for this brand
-        static::where('brand_id', $this->brand_id)
+        static::where('user_id', $this->user_id)
             ->where('id', '!=', $this->id)
             ->update(['is_default' => false]);
 
@@ -64,23 +62,4 @@ class BrandPaymentMethod extends Model
         $this->update(['is_default' => true]);
     }
 
-    /**
-     * Get masked card number for display
-     */
-    public function getMaskedCardNumberAttribute(): string
-    {
-        if ($this->card_last4) {
-            return '**** **** **** ' . $this->card_last4;
-        }
-        return '**** **** **** ****';
-    }
-
-    /**
-     * Get formatted card info for display
-     */
-    public function getFormattedCardInfoAttribute(): string
-    {
-        $brand = $this->card_brand ? ucfirst($this->card_brand) : 'Card';
-        return $brand . ' •••• ' . $this->card_last4;
-    }
 } 
