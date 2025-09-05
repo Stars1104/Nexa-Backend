@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Represents a payment method saved by a brand/user (Stripe integration).
  *
  * @property int $id
- * @property int $user_id
+ * @property int $brand_id
  * @property string $customer_id
  * @property string $payment_method_id
  * @property string|null $card_holder_name
@@ -28,7 +28,7 @@ class BrandPaymentMethod extends Model
     use HasFactory;
 
     protected $fillable = [
-        'user_id',
+        'brand_id',
         'customer_id',
         'payment_method_id',
         'card_holder_name',
@@ -52,7 +52,7 @@ class BrandPaymentMethod extends Model
      */
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'user_id');
+        return $this->belongsTo(User::class, 'brand_id');
     }
 
     /**
@@ -76,7 +76,7 @@ class BrandPaymentMethod extends Model
      */
     public function setAsDefault(): void
     {
-        static::where('user_id', $this->user_id)
+        static::where('brand_id', $this->brand_id)
             ->where('id', '!=', $this->id)
             ->update(['is_default' => false]);
 
