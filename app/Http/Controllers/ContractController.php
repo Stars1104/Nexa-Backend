@@ -10,12 +10,19 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use App\Services\NotificationService;
+use App\Services\StripeService;
 use App\Models\ChatRoom;
 use App\Traits\OfferChatMessageTrait;
 
 class ContractController extends Controller
 {
     use OfferChatMessageTrait;
+    protected $stripe;
+
+    public function __construct(StripeService $stripe)
+    {
+        $this->stripe = $stripe;
+    }
 
     /**
      * Create a system message for contract-related events
@@ -662,63 +669,100 @@ class ContractController extends Controller
                 ], 400);
             }
 
-            if ($contract->complete()) {
-                // Send chat message about contract completion
-                $this->sendContractCompletionMessage($contract, $user);
+            // Get default payment method of the brand
+            $paymentMethod = $user->defaultPaymentMethod;
+            if (!$paymentMethod) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Nenhum método de pagamento salvo encontrado. Por favor, adicione um método de pagamento para finalizar a campanha.',
+                ], 400);
+            }
+            
+            $paymentData = [
+                'amount' => $contract->budget,
+                'payment_method_id' => $paymentMethod->payment_method_id,
+                'customer_id' => $paymentMethod->customer_id,
+                'contract_id' => $contract->id,
+                'brand_id' => $user->id,
+                'creator_id' => $contract->creator_id,
+            ];
 
-                // Emit Socket.IO event for real-time updates
-                $this->emitSocketEvent('contract_completed', [
-                    'roomId' => $contract->offer->chatRoom->room_id ?? null,
-                    'contractData' => [
-                        'id' => $contract->id,
-                        'title' => $contract->title,
-                        'description' => $contract->description,
-                        'status' => $contract->status,
-                        'workflow_status' => $contract->workflow_status,
-                        'brand_id' => $contract->brand_id,
+            try {
+                // Escrow funds from client account
+                $paymentIntent = $this->stripe->createPaymentIntentFromSavedCard($paymentData);
+
+                if ($contract->complete()) {
+                    // Send chat message about contract completion
+                    $this->sendContractCompletionMessage($contract, $user);
+
+                    // Emit Socket.IO event for real-time updates
+                    $this->emitSocketEvent('contract_completed', [
+                        'roomId' => $contract->offer->chatRoom->room_id ?? null,
+                        'contractData' => [
+                            'id' => $contract->id,
+                            'title' => $contract->title,
+                            'description' => $contract->description,
+                            'status' => $contract->status,
+                            'workflow_status' => $contract->workflow_status,
+                            'brand_id' => $contract->brand_id,
+                            'creator_id' => $contract->creator_id,
+                            'can_be_completed' => $contract->canBeCompleted(),
+                            'can_be_cancelled' => $contract->canBeCancelled(),
+                            'can_be_started' => $contract->canBeStarted(),
+                            'budget' => $contract->formatted_budget,
+                            'creator_amount' => $contract->formatted_creator_amount,
+                            'platform_fee' => $contract->formatted_platform_fee,
+                            'estimated_days' => $contract->estimated_days,
+                            'started_at' => $contract->started_at?->format('Y-m-d H:i:s'),
+                            'expected_completion_at' => $contract->expected_completion_at?->format('Y-m-d H:i:s'),
+                            'completed_at' => $contract->completed_at?->format('Y-m-d H:i:s'),
+                            'days_until_completion' => $contract->days_until_completion,
+                            'progress_percentage' => $contract->progress_percentage,
+                            'is_overdue' => $contract->isOverdue(),
+                            'is_near_completion' => $contract->is_near_completion,
+                            'can_review' => true,
+                        ],
+                        'senderId' => $user->id,
+                    ]);
+
+                    Log::info('Campaign completed successfully', [
+                        'contract_id' => $contract->id,
+                        'brand_id' => $user->id,
                         'creator_id' => $contract->creator_id,
-                        'can_be_completed' => $contract->canBeCompleted(),
-                        'can_be_cancelled' => $contract->canBeCancelled(),
-                        'can_be_started' => $contract->canBeStarted(),
-                        'budget' => $contract->formatted_budget,
-                        'creator_amount' => $contract->formatted_creator_amount,
-                        'platform_fee' => $contract->formatted_platform_fee,
-                        'estimated_days' => $contract->estimated_days,
-                        'started_at' => $contract->started_at?->format('Y-m-d H:i:s'),
-                        'expected_completion_at' => $contract->expected_completion_at?->format('Y-m-d H:i:s'),
-                        'completed_at' => $contract->completed_at?->format('Y-m-d H:i:s'),
-                        'days_until_completion' => $contract->days_until_completion,
-                        'progress_percentage' => $contract->progress_percentage,
-                        'is_overdue' => $contract->isOverdue(),
-                        'is_near_completion' => $contract->is_near_completion,
-                        'can_review' => true,
-                    ],
-                    'senderId' => $user->id,
-                ]);
+                        'chat_message_sent' => true,
+                    ]);
 
-                Log::info('Campaign completed successfully', [
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Campanha finalizada com sucesso! Por favor, envie sua avaliação para liberar o pagamento para o criador.',
+                        'data' => [
+                            'contract_id' => $contract->id,
+                            'status' => $contract->status,
+                            'workflow_status' => $contract->workflow_status,
+                            'requires_review' => true,
+                            'next_step' => 'submit_review',
+                        ],
+                    ]);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Falha ao finalizar campanha',
+                    ], 500);
+                }
+
+            } catch (\Exception $e) {
+                Log::error('Error during payment processing for contract completion', [
                     'contract_id' => $contract->id,
                     'brand_id' => $user->id,
                     'creator_id' => $contract->creator_id,
-                    'chat_message_sent' => true,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
                 ]);
 
                 return response()->json([
-                    'success' => true,
-                    'message' => 'Campanha finalizada com sucesso! Por favor, envie sua avaliação para liberar o pagamento para o criador.',
-                    'data' => [
-                        'contract_id' => $contract->id,
-                        'status' => $contract->status,
-                        'workflow_status' => $contract->workflow_status,
-                        'requires_review' => true,
-                        'next_step' => 'submit_review',
-                    ],
-                ]);
-            } else {
-                return response()->json([
                     'success' => false,
-                    'message' => 'Falha ao finalizar campanha',
-                ], 500);
+                    'message' => 'Falha ao processar o pagamento. Por favor, verifique seu método de pagamento e tente novamente.',
+                ], 500); 
             }
 
         } catch (\Exception $e) {

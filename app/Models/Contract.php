@@ -398,7 +398,7 @@ class Contract extends Model
             return false;
         }
 
-        // Calculate payment amounts
+                // Calculate payment amounts
         $creatorAmount = $this->budget * 0.95;
         $platformFee = $this->budget * 0.05;
 

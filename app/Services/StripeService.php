@@ -62,6 +62,29 @@ class StripeService
     }
 
     /**
+     * Create a payment intent using a saved card
+     */
+    public function createPaymentIntentFromSavedCard($paymentData)
+    {
+        $paymentIntent = PaymentIntent::create([
+            'amount' => intval($paymentData['amount'] * 100), // convert to centavos (1BRL = 100 centavos)
+            'currency' => 'brl',
+            'customer' => $paymentData['customer_id'],
+            'payment_method' => $paymentData['payment_method_id'],
+            'off_session' => true,
+            'confirm' => true,
+            'description' => "Payment for contract #{$paymentData['contract_id']}",
+            'metadata' => [
+                'contract_id' => $paymentData['contract_id'],
+                'brand_id' => $paymentData['brand_id'],
+                'creator_id' => $paymentData['creator_id'],
+            ],
+        ]);
+
+        return $paymentIntent;
+    }
+
+    /**
      * Create a one-time payment in BRL
      */
     public function createPaymentBRL(float $amount, string $paymentMethodId)
