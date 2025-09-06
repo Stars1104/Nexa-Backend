@@ -221,6 +221,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::delete('/payment/methods/{cardId}', [PaymentController::class, 'deletePaymentMethod']);
     Route::post('/payment/process', [PaymentController::class, 'processPayment']);
     Route::get('/payment/history', [PaymentController::class, 'getPaymentHistory'])->middleware(['throttle:dashboard']);
+    Route::post('/payment/register-customer', [PaymentController::class, 'registerStripeCustomer']);
+    Route::post('/payment/setup-intent', [PaymentController::class, 'createSetupIntent']);
+    Route::post('/payment/retrieve-stripecard', [PaymentController::class, 'getCardInfoFromPaymentMethod']);
     
     // Subscription routes
     Route::middleware(['throttle:payment'])->group(function () {

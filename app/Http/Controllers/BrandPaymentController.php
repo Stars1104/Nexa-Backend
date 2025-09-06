@@ -42,10 +42,13 @@ class BrandPaymentController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'card_hash' => 'required|string',
-            'card_holder_name' => 'required|string|max:255',
-            'cpf' => 'required|string|regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/',
-            'is_default' => 'boolean',
+            'customer_id' => 'required|string',
+            'payment_method_id' => 'required|string',
+            'is_default' => 'required|boolean',
+            'card_brand' => 'required|string',
+            'card_last4' => 'required|string|size:4',
+            'card_exp_month' => 'required|integer|min:1|max:12',
+            'card_exp_year' => 'required|integer|min:' . date('Y'),
         ]);
 
         if ($validator->fails()) {
@@ -57,167 +60,44 @@ class BrandPaymentController extends Controller
         }
 
         try {
-            // Real Pagar.me integration - check if API key is configured
-            if (empty($this->apiKey)) {
-                Log::error('Pagar.me API key not configured');
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Payment gateway not configured. Please contact support.',
-                ], 503);
-            }
-
-            // Validate API key format - Pagar.me keys start with 'sk_'
-            if (!preg_match('/^sk_[a-zA-Z0-9]+$/', $this->apiKey)) {
-                Log::error('Invalid Pagar.me API key format', ['key' => substr($this->apiKey, 0, 10) . '...']);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid payment gateway configuration. Please check your API key.',
-                ], 503);
-            }
-
-            // Step 1: Create or get customer in Pagar.me
-            $customerData = [
-                'name' => $user->name,
-                'email' => $user->email,
-                'type' => 'individual',
-                'country' => 'br',
-                'documents' => [
-                    [
-                        'type' => 'cpf',
-                        'number' => preg_replace('/[^0-9]/', '', $request->cpf)
-                    ]
-                ],
-                'phones' => [
-                    'mobile_phone' => [
-                        'country_code' => '55',
-                        'area_code' => '11',
-                        'number' => '999999999'
-                    ]
-                ]
-            ];
-
             // Check if customer already exists
-            $existingCustomer = null;
-            if ($user->defaultPaymentMethod) {
-                $existingCustomer = $this->getCustomerFromPagarMe($user->defaultPaymentMethod->pagarme_customer_id);
-            }
 
-            if (!$existingCustomer) {
-                // Create new customer
-                $customerResponse = Http::withHeaders([
-                    'Authorization' => 'Basic ' . base64_encode($this->apiKey . ':'),
-                    'Content-Type' => 'application/json',
-                ])->post($this->baseUrl . '/customers', $customerData);
-
-                if (!$customerResponse->successful()) {
-                    $errorResponse = $customerResponse->json();
-                    Log::error('Failed to create customer in Pagar.me', [
-                        'user_id' => $user->id,
-                        'response' => $errorResponse,
-                        'status' => $customerResponse->status()
-                    ]);
-
-                    // Handle specific Pagar.me errors
-                    if ($customerResponse->status() === 401) {
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'Payment gateway authentication failed. Please check your API key configuration.',
-                            'error' => 'Invalid API key or authentication failed'
-                        ], 400);
-                    }
-
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Failed to create customer account. Please try again.',
-                        'error' => $errorResponse
-                    ], 400);
-                }
-
-                $customer = $customerResponse->json();
-            } else {
-                $customer = $existingCustomer;
-            }
-
-            // Step 2: Create card using card_hash (Pagar.me v5 approach)
-            $testTransactionData = [
-                'amount' => 1, // 1 cent test transaction
-                'payment' => [
-                    'payment_method' => 'credit_card',
-                    'credit_card' => [
-                        'operation_type' => 'auth_only', // Only authorize, don't capture
-                        'card_hash' => $request->card_hash,
-                        'card' => [
-                            'holder_name' => $request->card_holder_name,
-                            'billing_address' => [
-                                'street' => 'Av. Brigadeiro Faria Lima',
-                                'number' => '2927',
-                                'zip_code' => '01234-000',
-                                'neighborhood' => 'Itaim Bibi',
-                                'city' => 'São Paulo',
-                                'state' => 'SP',
-                                'country' => 'BR'
-                            ]
-                        ]
-                    ]
-                ],
-                'customer_id' => $customer['id']
-            ];
-
-            // Make the test transaction to validate the card
-            $testResponse = Http::withHeaders([
-                'Authorization' => 'Basic ' . base64_encode($this->apiKey . ':'),
-                'Content-Type' => 'application/json',
-            ])->post($this->baseUrl . '/orders', $testTransactionData);
-
-            if (!$testResponse->successful()) {
-                $errorResponse = $testResponse->json();
-                Log::error('Card validation failed', [
-                    'user_id' => $user->id,
-                    'response' => $errorResponse,
-                    'status' => $testResponse->status()
-                ]);
-
+            $existingMethod = BrandPaymentMethod::where('brand_id', $user->id)
+                ->where('card_holder_name', $user->name)
+                ->where('card_last4', $request->card_last4)
+                ->first();
+            
+            $paymentMethodCount = BrandPaymentMethod::where('brand_id', $user->id)
+                ->where('is_active', true)
+                ->count();
+            
+            
+            if ($existingMethod) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Card validation failed. Please check your card details and try again.',
-                    'error' => $errorResponse
+                    'message' => 'This card is already registered',
+                    'error' => 'duplicate_card'
                 ], 400);
             }
 
-            $testOrder = $testResponse->json();
-            $cardInfo = [
-                'id' => $testOrder['charges'][0]['payment_method_details']['card']['id'] ?? null,
-                'brand' => $testOrder['charges'][0]['payment_method_details']['card']['brand'] ?? 'unknown',
-                'last_four_digits' => $testOrder['charges'][0]['payment_method_details']['card']['last_four_digits'] ?? '****',
-                'last4' => $testOrder['charges'][0]['payment_method_details']['card']['last_four_digits'] ?? '****',
-                'holder_name' => $request->card_holder_name
-            ];
-
-            // Step 3: Save payment method to database
             $paymentMethod = BrandPaymentMethod::create([
-                'user_id' => $user->id,
-                'card_holder_name' => $request->card_holder_name,
-                'card_brand' => $cardInfo['brand'],
-                'card_last4' => $cardInfo['last4'],
-                'pagarme_customer_id' => $customer['id'],
-                'pagarme_card_id' => $cardInfo['id'],
-                'is_default' => $request->is_default ?? false,
-                'card_hash' => $request->card_hash,
+                'brand_id' => $user->id,
+                'customer_id' => $request->customer_id,
+                'payment_method_id' => $request->payment_method_id,
+                'card_holder_name' => $user->name,
+                'card_brand'=> $request->card_brand,
+                'card_last4'=> $request->card_last4,
+                'card_exp_month'=> $request->card_exp_month,
+                'card_exp_year'=> $request->card_exp_year,
+                'is_default' => $request->is_default || (!$paymentMethodCount) ?? false,
             ]);
 
             // If this is set as default, unset other default methods
             if ($request->is_default) {
-                BrandPaymentMethod::where('user_id', $user->id)
+                BrandPaymentMethod::where('brand_id', $user->id)
                     ->where('id', '!=', $paymentMethod->id)
                     ->update(['is_default' => false]);
             }
-
-            Log::info('Payment method created successfully', [
-                'user_id' => $user->id,
-                'payment_method_id' => $paymentMethod->id,
-                'card_brand' => $cardInfo['brand'],
-                'card_last4' => $cardInfo['last4']
-            ]);
 
             return response()->json([
                 'success' => true,
@@ -272,11 +152,14 @@ class BrandPaymentController extends Controller
             'data' => $paymentMethods->map(function ($method) {
                 return [
                     'id' => $method->id,
-                    'card_info' => $method->formatted_card_info,
+                    'customer_id' => $method->customer_id,
+                    'payment_method_id' => $method->payment_method_id,
+                    'is_default' => $method->is_default,
+                    'card_holder_name' => $method->card_holder_name,
                     'card_brand' => $method->card_brand,
                     'card_last4' => $method->card_last4,
-                    'card_holder_name' => $method->card_holder_name,
-                    'is_default' => $method->is_default,
+                    'card_exp_month' => $method->card_exp_month,
+                    'card_exp_year' => $method->card_exp_year,
                     'created_at' => $method->created_at,
                 ];
             })

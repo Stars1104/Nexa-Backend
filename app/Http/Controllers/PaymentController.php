@@ -32,6 +32,74 @@ class PaymentController extends Controller
         $this->stripe = $stripe;
     }
 
+    public function registerStripeCustomer(Request $request): JsonResponse
+    {
+        $user = auth()->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated',
+            ], 401);
+        }
+
+        try {
+            $customerId = $this->stripe->createCustomerForUser($user);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Stripe customer created successfully',
+                'customerId' => $customerId,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error creating Stripe customer', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create Stripe customer',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function createSetupIntent(Request $request): JsonResponse
+    {
+        try {
+            return $this->stripe->createSetupIntent($request);
+        } catch (\Exception $e) {
+            Log::error('Error creating Stripe Setup Intent', [
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create Setup Intent',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function getCardInfoFromPaymentMethod(Request $request) {
+        try {
+            return $this->stripe->getCardInfoFromPaymentMethod($request->paymentMethodId);
+        } catch (\Exception $e) {
+            Log::error('Error retrieving card info from Payment Method', [
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve card info',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
     /**
      * Process a subscription payment for creators
      */
