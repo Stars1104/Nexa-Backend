@@ -8,6 +8,8 @@ use Stripe\SetupIntent;
 use Stripe\PaymentIntent;
 use Stripe\Subscription;
 use Stripe\PaymentMethod;
+use Stripe\Account;
+use Stripe\AccountLink;
 
 class StripeService
 {
@@ -82,6 +84,32 @@ class StripeService
         ]);
 
         return $paymentIntent;
+    }
+
+    public function createConnectAccountForDeveloper($creatorEmail)
+    {
+        $account = Account::create([
+            'type' => 'express',
+            'country' => 'BR',
+            'email' => $creatorEmail,
+            'capabilities' => [
+                'card_payments' => ['requested' => true],
+                'transfers' => ['requested' => true],
+            ],
+        ]);
+        return $account;
+    }
+
+    public function createAccountLink($accountId)
+    {
+        $accountLink = AccountLink::create([
+            'account' => $accountId,
+            'refresh_url' => route('stripe.onboarding.refresh'),
+            'return_url' => route('stripe.onboarding.complete'),
+            'type' => 'account_onboarding',
+        ]);
+
+        return $accountLink;
     }
 
     /**

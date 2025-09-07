@@ -956,18 +956,18 @@ class PaymentController extends Controller
                 ]
             ]);
 
-        } catch (\Exception $e) {
-            Log::error('Bank account registration failed', [
-                'user_id' => $user->id,
-                'error' => $e->getMessage(),
-            ]);
+        // } catch (\Exception $e) {
+        //     Log::error('Bank account registration failed', [
+        //         'user_id' => $user->id,
+        //         'error' => $e->getMessage(),
+        //     ]);
 
-            return response()->json([
-                'success' => false,
-                'message' => 'Erro ao registrar informações bancárias. Tente novamente.',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => 'Erro ao registrar informações bancárias. Tente novamente.',
+        //         'error' => $e->getMessage()
+        //     ], 500);
+        // }
     }
 
     /**
