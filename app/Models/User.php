@@ -61,7 +61,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'cpf',
         'bank_account_name',
         'suspended_until',
-        'suspension_reason'
+        'suspension_reason',
+        'stripe_account_id'
     ];
 
     /**
