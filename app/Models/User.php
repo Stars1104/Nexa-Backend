@@ -44,6 +44,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'industry',
         'state',
         'language',
+        'languages',
         'has_premium',
         'premium_expires_at',
         'free_trial_expires_at',
@@ -101,6 +102,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'free_trial_expires_at' => 'datetime',
         'suspended_until' => 'datetime',
         'birth_date' => 'date',
+        'languages' => 'array',
     ];
 
     // Relationships

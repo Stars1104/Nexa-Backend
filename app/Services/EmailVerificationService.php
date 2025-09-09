@@ -301,32 +301,36 @@ class EmailVerificationService
     }
 
     /**
-     * Get plain text email content
+     * Get plain text email content - differentiated by user role
      */
     private static function getEmailText(User $user, string $verificationUrl): string
     {
-        return "Hello {$user->name}!\n\n" .
-               "Thank you for registering with Nexa! Please click the link below to verify your email address:\n\n" .
+        $content = self::getRoleSpecificContent($user);
+        
+        return "Olá {$user->name}!\n\n" .
+               "{$content['main_message']}\n\n" .
+               "Para verificar seu email, clique no link abaixo:\n\n" .
                "{$verificationUrl}\n\n" .
-               "If you did not create an account, no further action is required.\n\n" .
-               "This verification link will expire in 60 minutes.\n\n" .
-               "Best regards,\nThe Nexa Team";
+               "Se você não criou uma conta na Nexa, pode ignorar este email com segurança.\n\n" .
+               "Este link de verificação expirará em 60 minutos.\n\n" .
+               "Atenciosamente,\nEquipe Nexa";
     }
 
     /**
-     * Get HTML email content
+     * Get HTML email content - differentiated by user role
      */
     private static function getEmailHtml(User $user, string $verificationUrl, string $logoUrl): string
     {
         $year = date('Y');
+        $content = self::getRoleSpecificContent($user);
 
         return <<<HTML
             <!DOCTYPE html>
-            <html>
+            <html lang="pt-BR">
             <head>
                 <meta charset='utf-8'>
                 <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-                <title>Verify Email Address - Nexa Platform</title>
+                <title>Verificar Endereço de Email - Plataforma Nexa</title>
                 <style>
                     @media only screen and (max-width: 600px) {
                         .container { padding: 15px !important; }
@@ -351,18 +355,18 @@ class EmailVerificationService
                                 style="width: 100px; background: rgba(255, 255, 255, 0.1); padding: 10px; display: block; margin: 0 auto;">
                         </div> -->
                         <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
-                            Welcome to Nexa-UGC!
+                            Bem-vindo à Nexa!
                         </h1>
                     </div>
                     
                     <!-- Main Content -->
                     <div class="content" style="padding: 40px 30px;">
                         <h2 style="color: #1f2937; margin: 0 0 20px 0; font-size: 22px; font-weight: 600;">
-                            🎉 Congratulations {$user->name}!
+                            {$content['subject']}
                         </h2>
                         
                         <p style="font-size: 16px; margin-bottom: 25px; color: #4b5563; line-height: 1.7;">
-                            Thank you for joining our community! To get started and unlock all the amazing features of Nexa, please confirm your email address by clicking the button below.
+                            {$content['main_message']}
                         </p>
                         
                         <!-- CTA Button -->
@@ -370,24 +374,24 @@ class EmailVerificationService
                             <a href="{$verificationUrl}" 
                             class="cta-button"
                             style="background: linear-gradient(135deg, #e91e63 0%, #f06292 100%); color: white; padding: 16px 32px; text-decoration: none; border-radius: 50px; font-weight: 600; font-size: 16px; display: inline-block; box-shadow: 0 4px 15px rgba(233, 30, 99, 0.3); transition: all 0.3s ease; border: none;">
-                                ✨ Verify My Email Address
+                                ✨ Verificar Meu Email
                             </a>
                         </div>
                         
                         <!-- Security Notice -->
                         <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 20px; border-radius: 6px; margin: 30px 0;">
                             <p style="margin: 0; color: #92400e; font-size: 14px; font-weight: 500;">
-                                🔒 <strong>Security Note:</strong> For your protection, this verification link will expire in <strong>60 minutes</strong>.
+                                🔒 <strong>Nota de Segurança:</strong> Para sua proteção, este link de verificação expirará em <strong>60 minutos</strong>.
                             </p>
                         </div>
                         
                         <!-- Additional Info -->
                         <p style="font-size: 14px; color: #6b7280; margin-bottom: 15px; line-height: 1.6;">
-                            If you didn't create a Nexa account, you can safely ignore this email. No action is required.
+                            Se você não criou uma conta na Nexa, pode ignorar este email com segurança. Nenhuma ação é necessária.
                         </p>
                         
                         <p style="font-size: 14px; color: #6b7280; margin-bottom: 0; line-height: 1.6;">
-                            Having trouble? Contact our support team and we'll be happy to help!
+                            Tendo problemas? Entre em contato com nossa equipe de suporte e ficaremos felizes em ajudar!
                         </p>
                     </div>
                     
@@ -395,8 +399,8 @@ class EmailVerificationService
                     <div style="background: #f8fafc; padding: 25px 30px; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb;">
                         <div style="text-align: center; margin-bottom: 20px;">
                             <p style="margin: 0; color: #6b7280; font-size: 14px; font-weight: 500;">
-                                Best regards,<br>
-                                <span style="color: #6366f1; font-weight: 600;">The Nexa Team</span>
+                                Atenciosamente,<br>
+                                <span style="color: #6366f1; font-weight: 600;">Equipe Nexa</span>
                             </p>
                         </div>
                         
@@ -408,7 +412,7 @@ class EmailVerificationService
                         
                         <div style="text-align: center; border-top: 1px solid #e5e7eb; padding-top: 15px;">
                             <p style="margin: 0; color: #9ca3af; font-size: 12px;">
-                                © {$year} Nexa UGC. All rights reserved.
+                                © {$year} Nexa. Todos os direitos reservados.
                             </p>
                         </div>
                     </div>
@@ -489,6 +493,30 @@ class EmailVerificationService
             Log::info("User needs to check their email and click the verification link from AWS SES");
         } catch (Exception $e) {
             Log::error('Failed to send verification notification: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Get role-specific email content
+     */
+    private static function getRoleSpecificContent(User $user): array
+    {
+        if ($user->role === 'creator') {
+            return [
+                'subject' => '🩷 Parabéns! Seu perfil foi selecionado!',
+                'main_message' => 'Parabéns! Você tem a cara da marca e foi selecionada para uma parceria de sucesso! Prepare-se para mostrar todo o seu talento e representar a NEXA com criatividade e profissionalismo. Estamos animados para ver o que você vai criar! Abra o site da NEXA e verifique o seu Chat com a marca.'
+            ];
+        } elseif ($user->role === 'brand') {
+            return [
+                'subject' => '🩷 Parabéns! Sua campanha foi aprovada na NEXA!',
+                'main_message' => 'Agora é hora de dar início a uma parceria estratégica com criadores de alto nível para a sua marca. Acesse o site e confira sua campanha ativa.'
+            ];
+        } else {
+            // Default fallback
+            return [
+                'subject' => '🎉 Bem-vindo à Nexa!',
+                'main_message' => 'Obrigado por se juntar à nossa comunidade! Para começar e desbloquear todos os recursos incríveis da Nexa, confirme seu endereço de email clicando no botão abaixo.'
+            ];
         }
     }
 

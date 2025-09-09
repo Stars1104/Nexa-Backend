@@ -106,6 +106,17 @@ class CampaignController extends Controller
                           ->orWhereJsonContains('target_genders', $creator->gender);
                     });
                 }
+                
+                // Filter by social media requirements
+                // Only show campaigns that creators can qualify for based on their social media presence
+                if ($creator->creator_type === 'influencer' || $creator->creator_type === 'both') {
+                    // For influencers and both types, they must have Instagram to see campaigns
+                    if (!$creator->instagram_handle) {
+                        // If influencer/both doesn't have Instagram, don't show any campaigns
+                        $query->whereRaw('1 = 0'); // This will return no results
+                    }
+                }
+                // UGC creators can see all campaigns regardless of social media presence
             }
 
             // Search functionality

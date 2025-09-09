@@ -346,17 +346,34 @@ class AdminController extends Controller
     public function approveCampaign(int $id): JsonResponse
     {
         try {
+            $user = auth()->user();
             $campaign = Campaign::findOrFail($id);
-            $campaign->update([
-                'status' => 'approved',
-                'is_active' => true,
+
+            if (!$campaign->isPending()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only pending campaigns can be approved'
+                ], 422);
+            }
+
+            // Use the model's approve method to ensure proper workflow
+            $campaign->approve($user->id);
+
+            // Notify admin of campaign approval
+            \App\Services\NotificationService::notifyAdminOfSystemActivity('campaign_approved', [
+                'campaign_id' => $campaign->id,
+                'campaign_title' => $campaign->title,
+                'brand_name' => $campaign->brand->name,
+                'approved_by' => $user->name,
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Campaign approved successfully'
+                'message' => 'Campaign approved successfully',
+                'data' => $campaign->load(['brand', 'approvedBy'])
             ]);
         } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to approve campaign: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to approve campaign'
@@ -370,17 +387,26 @@ class AdminController extends Controller
     public function rejectCampaign(int $id): JsonResponse
     {
         try {
+            $user = auth()->user();
             $campaign = Campaign::findOrFail($id);
-            $campaign->update([
-                'status' => 'rejected',
-                'is_active' => false,
-            ]);
+
+            if (!$campaign->isPending()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only pending campaigns can be rejected'
+                ], 422);
+            }
+
+            // Use the model's reject method to ensure proper workflow
+            $campaign->reject($user->id, 'Rejected by admin');
 
             return response()->json([
                 'success' => true,
-                'message' => 'Campaign rejected successfully'
+                'message' => 'Campaign rejected successfully',
+                'data' => $campaign->load(['brand', 'approvedBy'])
             ]);
         } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to reject campaign: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to reject campaign'

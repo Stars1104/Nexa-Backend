@@ -33,7 +33,7 @@ class VerificationEmail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Verify Email Address - Nexa Platform',
+            subject: 'Verificar Endereço de Email - Plataforma Nexa',
         );
     }
 
