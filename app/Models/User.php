@@ -42,6 +42,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'facebook_page',
         'twitter_handle',
         'industry',
+        'niche',
         'state',
         'language',
         'languages',
@@ -74,7 +75,6 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     protected $attributes = [
         'gender' => 'other',
-        'birth_date' => '1990-01-01',
         'student_verified' => false,
         'has_premium' => false,
     ];

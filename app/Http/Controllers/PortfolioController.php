@@ -572,7 +572,7 @@ class PortfolioController extends Controller
                     'creator_type' => $creator->creator_type,
                     'industry' => $creator->industry,
                     'language' => $creator->language,
-                    'languages' => $creator->language ? [$creator->language] : ['English'],
+                    'languages' => $creator->languages ?: ($creator->language ? [$creator->language] : []),
                     // Social media handles
                     'instagram_handle' => $creator->instagram_handle,
                     'tiktok_handle' => $creator->tiktok_handle,
