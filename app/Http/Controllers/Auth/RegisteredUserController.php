@@ -164,7 +164,7 @@ class RegisteredUserController extends Controller
             'email' => strtolower(trim($request->email)),
             'role' => $request->role ?? 'creator',
             'gender' => $request->gender ?? 'other',
-            'birth_date' => $request->birth_date ?? '1990-01-01',
+            'birth_date' => $request->birth_date ?? null,
         ]);
         
         $user = User::create([
@@ -179,9 +179,9 @@ class RegisteredUserController extends Controller
             'student_verified' => false,
             'student_expires_at' => null,
             'gender' => $request->gender ?? 'other',
-            'birth_date' => $request->birth_date ?? '1990-01-01',
+            'birth_date' => $request->birth_date ?? null,
             'state' => $request->state ? trim($request->state) : null,
-            'language' => $request->language ?? 'en',
+            'language' => null,
             'has_premium' => $request->has_premium ?? false,
             'premium_expires_at' => null,
             'free_trial_expires_at' => null,

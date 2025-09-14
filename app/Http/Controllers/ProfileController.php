@@ -49,9 +49,10 @@ class ProfileController extends Controller
                     'facebook_page' => $user->facebook_page,
                     'twitter_handle' => $user->twitter_handle,
                     'industry' => $user->industry,
+                    'niche' => $user->niche,
                     'state' => $user->state, // Return state directly instead of mapping to location
                     'language' => $user->language,
-                    'languages' => $user->languages ?: ($user->language ? [$user->language] : ['English']),
+                    'languages' => $user->languages ?: ($user->language ? [$user->language] : []),
                     'categories' => ['General'], // Default categories
                     'has_premium' => $user->has_premium,
                     'student_verified' => $user->student_verified,
@@ -135,6 +136,7 @@ class ProfileController extends Controller
                 'facebook_page' => 'sometimes|string|max:255',
                 'twitter_handle' => 'sometimes|string|max:255',
                 'industry' => 'sometimes|string|max:255',
+                'niche' => 'sometimes|string|max:255',
                 'state' => 'sometimes|string|max:255', // Accept state directly instead of location
                 'language' => 'sometimes|string|max:50',
                 'languages' => 'sometimes|string', // JSON string for multiple languages
@@ -202,8 +204,8 @@ class ProfileController extends Controller
                     $data['languages'] = $languages;
                     $data['language'] = $languages[0]; // Set first language as primary
                 } else {
-                    $data['languages'] = ['English'];
-                    $data['language'] = 'English';
+                    $data['languages'] = [];
+                    $data['language'] = null;
                 }
             }
 
@@ -266,9 +268,10 @@ class ProfileController extends Controller
                     'facebook_page' => $user->facebook_page,
                     'twitter_handle' => $user->twitter_handle,
                     'industry' => $user->industry,
+                    'niche' => $user->niche,
                     'location' => $user->state,
                     'language' => $user->language,
-                    'languages' => $user->languages ?: ($user->language ? [$user->language] : ['English']),
+                    'languages' => $user->languages ?: ($user->language ? [$user->language] : []),
                     'categories' => ['General'],
                     'has_premium' => $user->has_premium,
                     'student_verified' => $user->student_verified,
