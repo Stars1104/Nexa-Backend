@@ -155,7 +155,9 @@ class CampaignController extends Controller
                     'from' => $campaigns->firstItem(),
                     'to' => $campaigns->lastItem(),
                 ]
-            ]);
+            ])->header('Cache-Control', 'no-cache, no-store, must-revalidate')
+              ->header('Pragma', 'no-cache')
+              ->header('Expires', '0');
         } catch (\Exception $e) {
             Log::error('Failed to retrieve campaigns: ' . $e->getMessage());
             return response()->json([
@@ -215,7 +217,9 @@ class CampaignController extends Controller
                 'success' => true,
                 'data' => $campaigns,
                 'count' => $campaigns->count()
-            ]);
+            ])->header('Cache-Control', 'no-cache, no-store, must-revalidate')
+              ->header('Pragma', 'no-cache')
+              ->header('Expires', '0');
         } catch (\Exception $e) {
             Log::error('Failed to retrieve all campaigns: ' . $e->getMessage());
             return response()->json([
@@ -450,7 +454,9 @@ class CampaignController extends Controller
                     'from' => $campaigns->firstItem(),
                     'to' => $campaigns->lastItem(),
                 ],
-            ]);
+            ])->header('Cache-Control', 'no-cache, no-store, must-revalidate')
+              ->header('Pragma', 'no-cache')
+              ->header('Expires', '0');
         } catch (\Exception $e) {
             Log::error('Failed to retrieve campaigns: ' . $e->getMessage());
 
@@ -533,9 +539,8 @@ class CampaignController extends Controller
             // Notify admin of new campaign creation
             \App\Services\NotificationService::notifyAdminOfNewCampaign($campaign);
 
-            // Notify creators about new project (only when approved)
-            // This will be called when admin approves the campaign
-            // NotificationService::notifyCreatorsOfNewProject($campaign);
+            // Note: Creators will be notified when admin approves the campaign
+            // This prevents confusion where creators get notifications for campaigns they can't see
 
             return response()->json([
                 'success' => true,
