@@ -130,19 +130,7 @@ class ReviewController extends Controller
                 'is_public' => $request->get('is_public', true),
             ]);
 
-            // Update reviewed user's statistics
-            try {
-                $reviewedUser = User::find($reviewedId);
-                if ($reviewedUser) {
-                    $reviewedUser->updateReviewStats();
-                }
-            } catch (\Exception $e) {
-                Log::error('Failed to update reviewed user stats', [
-                    'review_id' => $review->id,
-                    'reviewed_user_id' => $reviewedId,
-                    'error' => $e->getMessage()
-                ]);
-            }
+            // Note: Review statistics are automatically updated via the Review model's booted method
 
             // Update contract review status
             try {
@@ -275,11 +263,18 @@ class ReviewController extends Controller
                 ];
             });
 
-            // Get user stats
+            // Get rating distribution first
+            $ratingDistribution = $this->getRatingDistribution($user->id, $publicOnly === 'true' || $publicOnly === '1' || $publicOnly === true);
+            
+            // Calculate total reviews from distribution
+            $totalReviewsFromDistribution = array_sum($ratingDistribution);
+            
+            
+            // Get user stats - use distribution total if it's different from cached value
             $stats = [
                 'average_rating' => $user->average_rating ?? 0,
-                'total_reviews' => $user->total_reviews ?? 0,
-                'rating_distribution' => $this->getRatingDistribution($user->id, $publicOnly === 'true' || $publicOnly === '1' || $publicOnly === true),
+                'total_reviews' => $totalReviewsFromDistribution > 0 ? $totalReviewsFromDistribution : ($user->total_reviews ?? 0),
+                'rating_distribution' => $ratingDistribution,
             ];
 
             return response()->json([

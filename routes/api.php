@@ -228,6 +228,19 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/payment/subscription-status', [PaymentController::class, 'getSubscriptionStatus']);
     });
     
+    // Debug routes (temporary)
+    Route::post('/payment/debug', [PaymentController::class, 'debugPayment']);
+    Route::post('/payment/test', function(Request $request) {
+        return response()->json([
+            'success' => true,
+            'message' => 'Test endpoint working',
+            'data' => $request->all(),
+            'headers' => $request->headers->all(),
+            'auth' => auth()->check(),
+            'user' => auth()->user()
+        ]);
+    });
+    
     // Subscription management routes
     Route::get('/subscription/history', [SubscriptionController::class, 'getSubscriptionHistory'])->middleware(['throttle:dashboard']);
     Route::post('/subscription/cancel', [SubscriptionController::class, 'cancelSubscription']);

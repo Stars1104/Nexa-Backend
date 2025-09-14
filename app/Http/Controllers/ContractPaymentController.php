@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use App\Services\NotificationService;
+use App\Services\PaymentSimulator;
 
 class ContractPaymentController extends Controller
 {
@@ -22,6 +23,11 @@ class ContractPaymentController extends Controller
     {
         $this->apiKey = env('PAGARME_API_KEY', '');
         $this->baseUrl = 'https://api.pagar.me/core/v5';
+        
+        // Log simulation mode status
+        if (PaymentSimulator::isSimulationMode()) {
+            Log::info('Contract payment simulation mode is ENABLED - All contract payments will be simulated');
+        }
     }
 
     /**
@@ -83,6 +89,111 @@ class ContractPaymentController extends Controller
                 'success' => false,
                 'message' => 'No payment method found. Please add a payment method first.',
             ], 400);
+        }
+
+        // Check if simulation mode is enabled
+        if (PaymentSimulator::isSimulationMode()) {
+            Log::info('Processing contract payment in SIMULATION mode', [
+                'contract_id' => $contract->id,
+                'brand_id' => $user->id,
+                'simulation_mode' => true
+            ]);
+            
+            try {
+                DB::beginTransaction();
+
+                // Use PaymentSimulator to process the contract payment
+                $simulationResult = PaymentSimulator::simulateContractPayment([
+                    'amount' => $contract->budget,
+                    'contract_id' => $contract->id,
+                    'description' => 'Contract: ' . $contract->title,
+                ], $user);
+                
+                if (!$simulationResult['success']) {
+                    throw new \Exception($simulationResult['message'] ?? 'Simulation failed');
+                }
+
+                // Create transaction record
+                $transaction = Transaction::create([
+                    'user_id' => $user->id,
+                    'pagarme_transaction_id' => $simulationResult['transaction_id'],
+                    'status' => 'paid',
+                    'amount' => $contract->budget,
+                    'payment_method' => 'credit_card',
+                    'card_brand' => $paymentMethod->card_brand,
+                    'card_last4' => $paymentMethod->card_last4,
+                    'card_holder_name' => $paymentMethod->card_holder_name,
+                    'payment_data' => [
+                        'simulation' => true,
+                        'contract_id' => $contract->id,
+                        'processed_at' => now()->toISOString(),
+                    ],
+                    'paid_at' => now(),
+                    'contract_id' => $contract->id,
+                ]);
+
+                // Create job payment record
+                $jobPayment = \App\Models\JobPayment::create([
+                    'contract_id' => $contract->id,
+                    'brand_id' => $contract->brand_id,
+                    'creator_id' => $contract->creator_id,
+                    'total_amount' => $contract->budget,
+                    'platform_fee' => $contract->budget * 0.05, // 5% platform fee
+                    'creator_amount' => $contract->budget * 0.95, // 95% for creator
+                    'payment_method' => 'credit_card',
+                    'status' => 'paid',
+                    'transaction_id' => $transaction->id,
+                ]);
+
+                // Update contract status
+                $contract->update([
+                    'status' => 'active',
+                    'workflow_status' => 'active',
+                    'started_at' => now(),
+                ]);
+
+                DB::commit();
+
+                // Notify both parties
+                NotificationService::notifyCreatorOfContractStarted($contract);
+                NotificationService::notifyBrandOfContractStarted($contract);
+
+                Log::info('SIMULATION: Contract payment processed successfully', [
+                    'contract_id' => $contract->id,
+                    'brand_id' => $user->id,
+                    'creator_id' => $contract->creator_id,
+                    'amount' => $contract->budget,
+                    'transaction_id' => $transaction->id,
+                    'simulation_mode' => true
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Contract payment processed successfully (SIMULATION)',
+                    'simulation' => true,
+                    'data' => [
+                        'contract_id' => $contract->id,
+                        'amount' => $contract->budget,
+                        'payment_status' => 'paid',
+                        'transaction_id' => $transaction->id,
+                    ]
+                ]);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                
+                Log::error('SIMULATION: Contract payment processing error', [
+                    'contract_id' => $contract->id,
+                    'brand_id' => $user->id,
+                    'error' => $e->getMessage(),
+                    'simulation_mode' => true
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Contract payment failed: ' . $e->getMessage(),
+                ], 500);
+            }
         }
 
         // Check if Pagar.me is configured

@@ -46,6 +46,7 @@ return [
         'webhook_secret' => env('PAGARME_WEBHOOK_SECRET'),
         'environment' => env('PAGARME_ENVIRONMENT', 'sandbox'), // sandbox or production
         'account_id' => env('PAGARME_ACCOUNT_ID'),
+        'simulation_mode' => env('PAGARME_SIMULATION_MODE', false), // Enable payment simulation
     ],
 
 ];
