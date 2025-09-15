@@ -311,6 +311,23 @@ class NotificationService
             
             // Send real-time notification via Socket.IO
             self::sendSocketNotification($campaign->brand_id, $notification);
+
+            // Send email notification
+            try {
+                $campaign->load(['brand']);
+                if ($status === 'approved') {
+                    Mail::to($campaign->brand->email)->send(new \App\Mail\CampaignApproved($campaign));
+                } else {
+                    Mail::to($campaign->brand->email)->send(new \App\Mail\CampaignRejected($campaign));
+                }
+            } catch (\Exception $emailError) {
+                Log::error('Failed to send campaign status email', [
+                    'campaign_id' => $campaign->id,
+                    'brand_email' => $campaign->brand->email,
+                    'status' => $status,
+                    'error' => $emailError->getMessage()
+                ]);
+            }
         } catch (\Exception $e) {
             Log::error('Failed to notify brand of project status', [
                 'campaign_id' => $campaign->id,
