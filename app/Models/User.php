@@ -424,12 +424,12 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function brandPaymentMethods(): HasMany
     {
-        return $this->hasMany(BrandPaymentMethod::class, 'brand_id');
+        return $this->hasMany(BrandPaymentMethod::class, 'user_id');
     }
 
     public function defaultPaymentMethod(): HasOne
     {
-        return $this->hasOne(BrandPaymentMethod::class, 'brand_id')->where('is_default', true);
+        return $this->hasOne(BrandPaymentMethod::class, 'user_id')->where('is_default', true);
     }
 
     /**
