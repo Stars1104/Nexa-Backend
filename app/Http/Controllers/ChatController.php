@@ -468,7 +468,7 @@ class ChatController extends Controller
             }
 
             // Emit socket event for real-time delivery
-            $this->emitSocketEvent('new_message', [
+            $socketData = [
                 'roomId' => $room->room_id,
                 'messageId' => $message->id,
                 'message' => $message->message,
@@ -485,7 +485,10 @@ class ChatController extends Controller
                 ] : null,
                 'offerData' => $message->offer_data ? json_decode($message->offer_data, true) : null,
                 'timestamp' => $message->created_at->toISOString(),
-            ]);
+            ];
+            
+            \Log::info('Emitting socket event for message', $socketData);
+            $this->emitSocketEvent('new_message', $socketData);
 
             \Log::info('Message sent successfully', [
                 'message_id' => $message->id,

@@ -35,6 +35,7 @@ httpServer.on('request', (req, res) => {
                 const { event, data } = JSON.parse(body);
                 
                 console.log(`Received event from Laravel: ${event}`, data);
+                console.log(`Event data roomId: ${data?.roomId}, event type: ${event}`);
                 
                 // Emit the event to the appropriate room or all clients
                 if (event === 'new_message' && data.roomId) {
@@ -130,16 +131,19 @@ io.on('connection', (socket) => {
 
     // Handle new message
     socket.on('send_message', (data) => {
+        console.log('Received send_message event:', data);
+        
         if (!data || !data.roomId || !data.message) {
             console.error('Invalid message data received:', data);
             return;
         }
         
         const { roomId, message, senderId, senderName, senderAvatar, messageType, fileData } = data;
+        console.log(`Broadcasting message to room ${roomId} from user ${senderId}`);
         
-        // Broadcast message to other users in the room (not back to sender)
-        // Use io.to() instead of socket.to() for more reliable delivery
-        socket.to(roomId).emit('new_message', {
+        // Broadcast message to ALL users in the room (including sender for synchronization)
+        // Use io.to() for more reliable delivery
+        io.to(roomId).emit('new_message', {
             roomId,
             messageId: data.messageId, // Include the message ID from the database
             message,
