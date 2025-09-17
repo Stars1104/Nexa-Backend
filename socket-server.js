@@ -8,6 +8,8 @@ const io = new Server(httpServer, {
     cors: {
         origin: [
             "http://localhost:5000",
+            "http://localhost:5173",
+            "http://localhost:3000",
             "https://nexacreators.com.br"
         ],
         methods: ["GET", "POST"],
@@ -71,6 +73,13 @@ const userNotificationRooms = new Map();
 global.socket_server = io;
 
 io.on('connection', (socket) => {
+    console.log(`New client connected: ${socket.id}`);
+    
+    // Handle connection errors
+    socket.on('error', (error) => {
+        console.error(`Socket error for ${socket.id}:`, error);
+    });
+    
     // User joins with authentication
     socket.on('user_join', (data) => {
         const { userId, userRole } = data;
@@ -92,21 +101,40 @@ io.on('connection', (socket) => {
 
     // Join a specific chat room
     socket.on('join_room', (roomId) => {
+        if (!roomId || typeof roomId !== 'string') {
+            console.error(`Invalid roomId provided: ${roomId}`);
+            return;
+        }
+        
         socket.join(roomId);
+        console.log(`Socket ${socket.id} joined room ${roomId}`);
         
         // Log all sockets in the room
         io.in(roomId).fetchSockets().then(sockets => {
             console.log(`Room ${roomId} now has ${sockets.length} sockets:`, sockets.map(s => s.id));
+        }).catch(error => {
+            console.error(`Error fetching sockets for room ${roomId}:`, error);
         });
     });
 
     // Leave a specific chat room
     socket.on('leave_room', (roomId) => {
+        if (!roomId || typeof roomId !== 'string') {
+            console.error(`Invalid roomId provided for leave: ${roomId}`);
+            return;
+        }
+        
         socket.leave(roomId);
+        console.log(`Socket ${socket.id} left room ${roomId}`);
     });
 
     // Handle new message
     socket.on('send_message', (data) => {
+        if (!data || !data.roomId || !data.message) {
+            console.error('Invalid message data received:', data);
+            return;
+        }
+        
         const { roomId, message, senderId, senderName, senderAvatar, messageType, fileData } = data;
         
         // Broadcast message to other users in the room (not back to sender)
@@ -454,8 +482,9 @@ io.on('connection', (socket) => {
             connectedUsers.delete(socket.id);
             userRooms.delete(userId);
             userNotificationRooms.delete(userId);
+            
+            console.log(`User ${userId} disconnected: ${reason}`);
         }
-        
     });
 });
 
