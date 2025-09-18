@@ -226,6 +226,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::middleware(['throttle:payment'])->group(function () {
         Route::post('/payment/subscription', [PaymentController::class, 'processSubscription']);
         Route::get('/payment/subscription-status', [PaymentController::class, 'getSubscriptionStatus']);
+        Route::get('/payment/debug-subscription', [PaymentController::class, 'debugSubscriptionValidation']);
     });
     
     // Debug routes (temporary)
