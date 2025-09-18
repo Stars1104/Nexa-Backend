@@ -574,8 +574,6 @@ class PaymentController extends Controller
                 ->orderBy('created_at', 'desc')
                 ->paginate(10);
 
-
-
             return response()->json([
                 'transactions' => $transactions->items(),
                 'pagination' => [

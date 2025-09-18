@@ -28,7 +28,7 @@ class PaymentSimulator
         Log::info('SIMULATION: Processing subscription payment', [
             'user_id' => $user->id,
             'plan_id' => $subscriptionPlan->id,
-            'amount' => $subscriptionPlan->monthly_price,
+            'amount' => $subscriptionPlan->price,
         ]);
 
         // Simulate API delay
@@ -45,7 +45,7 @@ class PaymentSimulator
             'user_id' => $user->id,
             'pagarme_transaction_id' => $transactionId,
             'status' => 'paid',
-            'amount' => $subscriptionPlan->monthly_price,
+            'amount' => $subscriptionPlan->price,
             'payment_method' => 'credit_card',
             'card_brand' => self::getRandomCardBrand(),
             'card_last4' => substr($requestData['card_number'], -4),
@@ -90,7 +90,7 @@ class PaymentSimulator
             'success' => true,
             'transaction_id' => $transactionId,
             'status' => 'paid',
-            'amount' => $subscriptionPlan->monthly_price,
+            'amount' => $subscriptionPlan->price,
             'expires_at' => $expiresAt->toISOString(),
             'simulation' => true,
         ];
