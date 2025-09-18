@@ -112,7 +112,7 @@ class PaymentController extends Controller
             $request->validate([
                 'card_number' => 'required|string|size:16',
                 'card_holder_name' => 'required|string|max:255',
-                'card_expiration_date' => 'required|string|size:4', // MMYY format
+                'card_expiration_date' => 'required|string|regex:/^\d{4}$/', // MMYY format - exactly 4 digits
                 'card_cvv' => 'required|string|min:3|max:4',
                 'cpf' => 'required|string|regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/', // CPF format validation
                 'subscription_plan_id' => 'required|integer|exists:subscription_plans,id',
@@ -126,7 +126,7 @@ class PaymentController extends Controller
                 'validation_rules' => [
                     'card_number' => 'required|string|size:16',
                     'card_holder_name' => 'required|string|max:255',
-                    'card_expiration_date' => 'required|string|size:4',
+                    'card_expiration_date' => 'required|string|regex:/^\d{4}$/',
                     'card_cvv' => 'required|string|min:3|max:4',
                     'cpf' => 'required|string|regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/',
                     'subscription_plan_id' => 'required|integer|exists:subscription_plans,id',
