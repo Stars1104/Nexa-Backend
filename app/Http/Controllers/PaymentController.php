@@ -53,46 +53,6 @@ class PaymentController extends Controller
     }
 
     /**
-     * Debug endpoint to test subscription validation
-     */
-    public function debugSubscriptionValidation(Request $request): JsonResponse
-    {
-        $user = auth()->user();
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'Subscription validation debug',
-            'data' => [
-                'user_authenticated' => auth()->check(),
-                'user_id' => auth()->id(),
-                'user_role' => $user?->role,
-                'user_type' => $user?->user_type,
-                'is_creator' => $user?->isCreator(),
-                'has_premium' => $user?->has_premium,
-                'premium_expires_at' => $user?->premium_expires_at,
-                'subscription_plans' => \App\Models\SubscriptionPlan::all()->map(function($plan) {
-                    return [
-                        'id' => $plan->id,
-                        'name' => $plan->name,
-                        'price' => $plan->price,
-                        'duration_months' => $plan->duration_months,
-                        'is_active' => $plan->is_active,
-                    ];
-                }),
-                'request_data' => $request->all(),
-                'validation_rules' => [
-                    'card_number' => 'required|string|size:16',
-                    'card_holder_name' => 'required|string|max:255',
-                    'card_expiration_date' => 'required|string|regex:/^\d{4}$/',
-                    'card_cvv' => 'required|string|min:3|max:4',
-                    'cpf' => 'required|string|regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/',
-                    'subscription_plan_id' => 'required|integer|exists:subscription_plans,id',
-                ]
-            ]
-        ]);
-    }
-
-    /**
      * Process a subscription payment for creators
      */
     public function processSubscription(Request $request): JsonResponse
@@ -113,8 +73,14 @@ class PaymentController extends Controller
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Validation failed. Please check your input data.',
+                'message' => 'Validation failed',
                 'errors' => $e->errors(),
+                'debug_info' => [
+                    'received_card_number_length' => strlen($request->card_number ?? ''),
+                    'received_expiration_format' => $request->card_expiration_date ?? 'not_provided',
+                    'received_cpf_format' => $request->cpf ?? 'not_provided',
+                    'received_plan_id' => $request->subscription_plan_id ?? 'not_provided',
+                ]
             ], 400);
         }
 
@@ -130,14 +96,38 @@ class PaymentController extends Controller
         DB::beginTransaction();
         try {
             $user = auth()->user();
-
-            // Check if user is a creator
-            if (!$user->isCreator()) {
+            
+            Log::info('User authenticated for subscription', [
+                'user_id' => $user->id,
+                'user_email' => $user->email,
+                'user_role' => $user->role,
+            ]);
+            
+            if (!$user) {
+                Log::error('User not authenticated for subscription');
                 return response()->json([
                     'success' => false,
-                    'message' => 'Only creators can subscribe to premium',
-                ], 403);
+                    'message' => 'User not authenticated',
+                ], 401);
             }
+            
+        // Check if user is a creator
+        if (!$user->isCreator()) {
+            Log::error('Non-creator user attempted subscription', [
+                'user_id' => $user->id,
+                'user_role' => $user->role,
+                'user_type' => $user->user_type ?? 'not_set',
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Only creators can subscribe to premium',
+                'debug_info' => [
+                    'user_role' => $user->role,
+                    'user_type' => $user->user_type ?? 'not_set',
+                    'is_creator_method_result' => $user->isCreator(),
+                ]
+            ], 403);
+        }
 
             // Check if user already has active premium
             if ($user->hasPremiumAccess()) {
@@ -153,6 +143,10 @@ class PaymentController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid subscription plan selected',
+                    'debug_info' => [
+                        'requested_plan_id' => $request->subscription_plan_id,
+                        'available_plans' => \App\Models\SubscriptionPlan::all()->pluck('id', 'name')->toArray(),
+                    ]
                 ], 400);
             }
 
@@ -245,6 +239,8 @@ class PaymentController extends Controller
             $transactions = $user->transactions()
                 ->orderBy('created_at', 'desc')
                 ->paginate(10);
+
+
 
             return response()->json([
                 'transactions' => $transactions->items(),

@@ -1230,4 +1230,52 @@ class NotificationService
             ]);
         }
     }
+
+    /**
+     * Notify creator about proposal approval
+     */
+    public static function notifyCreatorOfProposalApproval(CampaignApplication $application): void
+    {
+        try {
+            $application->load(['campaign.brand', 'creator']);
+            
+            $notification = Notification::create([
+                'user_id' => $application->creator_id,
+                'type' => 'proposal_approved',
+                'title' => '💖 Parabéns! Seu perfil foi selecionado!',
+                'message' => "Parabéns! Você tem a cara da marca e foi selecionada para uma parceria de sucesso! Prepare-se para mostrar todo o seu talento e representar a NEXA com criatividade e profissionalismo.",
+                'data' => [
+                    'application_id' => $application->id,
+                    'campaign_id' => $application->campaign_id,
+                    'campaign_title' => $application->campaign->title,
+                    'brand_id' => $application->campaign->brand_id,
+                    'brand_name' => $application->campaign->brand->name,
+                    'proposed_budget' => $application->proposed_budget,
+                    'estimated_delivery_days' => $application->estimated_delivery_days,
+                    'approved_at' => $application->approved_at->toISOString(),
+                ],
+                'read_at' => null,
+            ]);
+
+            // Send real-time notification via Socket.IO
+            self::sendSocketNotification($application->creator_id, $notification);
+
+            // Send email notification
+            try {
+                Mail::to($application->creator->email)->send(new \App\Mail\ProposalApproved($application));
+            } catch (\Exception $emailError) {
+                Log::error('Failed to send proposal approval email', [
+                    'application_id' => $application->id,
+                    'creator_email' => $application->creator->email,
+                    'error' => $emailError->getMessage()
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to notify creator of proposal approval', [
+                'application_id' => $application->id,
+                'creator_id' => $application->creator_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
 } 

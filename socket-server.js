@@ -34,9 +34,6 @@ httpServer.on('request', (req, res) => {
             try {
                 const { event, data } = JSON.parse(body);
                 
-                console.log(`Received event from Laravel: ${event}`, data);
-                console.log(`Event data roomId: ${data?.roomId}, event type: ${event}`);
-                
                 // Emit the event to the appropriate room or all clients
                 if (event === 'new_message' && data.roomId) {
                     io.to(data.roomId).emit(event, data);
