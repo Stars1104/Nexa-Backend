@@ -83,17 +83,28 @@ class ChatController extends Controller
                 } elseif ($lastMessage && $lastMessage->sender_id === $room->creator_id) {
                     $otherUser = $room->creator;
                 } else {
-                    // If no messages, default to showing the creator
-                    $otherUser = $room->creator;
+                    // If no messages, default to showing the creator, but fallback to brand if creator is null
+                    $otherUser = $room->creator ?? $room->brand;
                 }
+            }
+            
+            // Additional safety check - if otherUser is still null, skip this room
+            if (!$otherUser) {
+                \Log::warning('Skipping chat room with null other user', [
+                    'room_id' => $room->room_id,
+                    'brand_id' => $room->brand_id,
+                    'creator_id' => $room->creator_id,
+                    'user_id' => $user->id,
+                ]);
+                return null;
             }
             
             return [
                 'id' => $room->id,
                 'room_id' => $room->room_id,
                 'campaign_id' => $room->campaign_id,
-                'campaign_title' => $room->campaign->title,
-                'campaign_status' => $room->campaign->status,
+                'campaign_title' => $room->campaign?->title ?? 'Campaign Not Found',
+                'campaign_status' => $room->campaign?->status ?? 'unknown',
                 'other_user' => [
                     'id' => $otherUser->id,
                     'name' => $otherUser->name,
@@ -113,11 +124,11 @@ class ChatController extends Controller
                     ->count(),
                 'last_message_at' => $room->last_message_at?->toISOString(),
             ];
-        });
+        })->filter(); // Remove null values
 
         return response()->json([
             'success' => true,
-            'data' => $formattedRooms,
+            'data' => $formattedRooms->values(), // Reset array keys
         ]);
     }
 

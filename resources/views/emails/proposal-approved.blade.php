@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Campanha Aprovada - Nexa Platform</title>
+    <title>Proposta Aprovada - Nexa Platform</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -68,24 +68,39 @@
             color: #666;
             font-size: 14px;
         }
+        .congratulations {
+            font-size: 18px;
+            color: #E91E63;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <div class="logo">NEXA</div>
-            <div class="status">✅ CAMPANHA APROVADA</div>
+            <div class="status">💖 PARABÉNS! SEU PERFIL FOI SELECIONADO!</div>
         </div>
 
         <div class="content">
-            <h2>Parabéns, {{ $brand->name }}! 🎉</h2>
+            <div class="congratulations">💖 Parabéns! Seu perfil foi selecionado!</div>
             
-            <p> <strong>Parabéns!</strong> Sua campanha foi aprovada na Nexa!</p>
+            <p>Parabéns! Você tem a cara da marca e foi selecionada para uma parceria de sucesso! Prepare-se para mostrar todo o seu talento e representar a NEXA com criatividade e profissionalismo. Estamos animados para ver o que você vai criar! Abra o site da NEXA e verifique o seu Chat com a marca.</p>
 
-            <p>Agora é hora de dar início a uma parceria estratégica com criadores de alto nível para a sua marca. Acesse o site e confira sua campanha ativa.</p>
+            <div class="info-box">
+                <h3>📋 Detalhes da Proposta</h3>
+                <p><strong>Campanha:</strong> {{ $application->campaign->title }}</p>
+                <p><strong>Marca:</strong> {{ $application->campaign->brand->name }}</p>
+                <p><strong>Orçamento Proposto:</strong> R$ {{ number_format($application->proposed_budget, 2, ',', '.') }}</p>
+                <p><strong>Prazo Estimado:</strong> {{ $application->estimated_delivery_days }} dias</p>
+                <p><strong>Data de Aprovação:</strong> {{ $application->approved_at->format('d/m/Y H:i') }}</p>
+            </div>
 
-            <a href="{{ config('app.frontend_url', 'http://localhost:5000') }}/brand/campaigns" class="button" style="color: white;">
-                Ver Minhas Campanhas
+            <p>Agora é hora de dar início a uma parceria estratégica com a marca. Acesse o site e confira seu chat com a marca para os próximos passos.</p>
+
+            <a href="{{ config('app.frontend_url', 'http://localhost:5000') }}/creator/applications" class="button" style="color: white;">
+                Ver Minhas Propostas
             </a>
         </div>
 

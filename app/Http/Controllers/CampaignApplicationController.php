@@ -17,7 +17,8 @@ class CampaignApplicationController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = Auth::user();
-        $query = CampaignApplication::with(['campaign', 'creator', 'reviewer']);
+        $query = CampaignApplication::with(['campaign', 'creator', 'reviewer'])
+            ->whereHas('creator'); // Only include applications where creator still exists
 
         if ($user->isCreator()) {
             // Creators see their own applications
@@ -152,6 +153,9 @@ class CampaignApplicationController extends Controller
 
         $application->approve($user->id);
 
+        // Notify creator about proposal approval
+        \App\Services\NotificationService::notifyCreatorOfProposalApproval($application);
+
         // Notify admin of application approval
         \App\Services\NotificationService::notifyAdminOfSystemActivity('application_approved', [
             'application_id' => $application->id,
@@ -271,6 +275,7 @@ class CampaignApplicationController extends Controller
 
         $applications = $campaign->applications()
             ->with(['creator', 'reviewer'])
+            ->whereHas('creator') // Only include applications where creator still exists
             ->orderBy('created_at', 'desc')
             ->paginate(15);
 
