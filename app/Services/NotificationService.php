@@ -262,6 +262,35 @@ class NotificationService
     }
 
     /**
+     * Send notification to admin about new student verification
+     */
+    public static function notifyAdminOfNewStudentVerification(User $user, array $studentData = []): void
+    {
+        try {
+            // Get all admin users
+            $adminUsers = User::where('role', 'admin')->get();
+            
+            foreach ($adminUsers as $admin) {
+                $notification = Notification::createSystemActivity($admin->id, array_merge($studentData, [
+                    'activity_type' => 'student_verification',
+                    'user_id' => $user->id,
+                    'user_name' => $user->name,
+                    'user_email' => $user->email,
+                    'student_verification_time' => now()->toISOString(),
+                ]));
+                
+                // Send real-time notification via Socket.IO
+                self::sendSocketNotification($admin->id, $notification);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to notify admin of new student verification', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
      * Notify creators about new project
      */
     public static function notifyCreatorsOfNewProject(Campaign $campaign): void

@@ -31,6 +31,7 @@ use App\Http\Controllers\GuideController;
 use App\Http\Controllers\DeliveryMaterialController;
 use App\Http\Controllers\Admin\BrandRankingController;
 use App\Http\Controllers\SubscriptionController;
+use App\Http\Controllers\StudentController;
 
 // Health check endpoint
 Route::get('/health', function () {
@@ -76,10 +77,16 @@ Route::middleware(['auth:sanctum', 'throttle:user-status'])->get('/user', functi
     return $request->user();
 });
 
+// Student verification routes (requires authentication)
+Route::middleware(['auth:sanctum'])->prefix('student')->group(function () {
+    Route::post('/verify', [StudentController::class, 'verifyStudent']);
+    Route::get('/status', [StudentController::class, 'getStudentStatus']);
+});
+
 // Authenticated user routes - with specific rate limiting per endpoint
 Route::middleware(['auth:sanctum'])->group(function () {
     
-    // Profile management
+    // Profile management (available to all authenticated users)
     Route::prefix('profile')->group(function () {
         Route::get('/', [ProfileController::class, 'show'])->middleware(['throttle:dashboard']); // Get current user profile
         Route::put('/', [ProfileController::class, 'update']); // Update current user profile
@@ -195,8 +202,8 @@ Route::middleware(['auth:sanctum', 'throttle:notifications'])->group(function ()
     
 });
 
-// Portfolio routes
-Route::middleware(['auth:sanctum', 'premium.access'])->group(function () {
+// Portfolio routes (available to all authenticated creators)
+Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/portfolio', [PortfolioController::class, 'show'])->middleware(['throttle:dashboard']);
     Route::put('/portfolio/profile', [PortfolioController::class, 'updateProfile']);
     Route::post('/portfolio/media', [PortfolioController::class, 'uploadMedia']);
@@ -393,6 +400,10 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/users/brands', [AdminController::class, 'getBrands']);
     Route::get('/users/statistics', [AdminController::class, 'getUserStatistics']);
     Route::patch('/users/{user}/status', [AdminController::class, 'updateUserStatus'])->where('user', '[0-9]+');
+    
+    // Student management
+    Route::get('/students', [AdminController::class, 'getStudents']);
+    Route::patch('/students/{student}/trial', [AdminController::class, 'updateStudentTrial'])->where('student', '[0-9]+');
     
     // Withdrawal methods management
     Route::apiResource('withdrawal-methods', \App\Http\Controllers\Admin\WithdrawalMethodController::class);

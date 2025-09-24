@@ -553,11 +553,26 @@ class PaymentController extends Controller
                 ], 401);
             }
             
+            // For students, check trial period; for others, check premium
+            $expiresAt = null;
+            $daysRemaining = 0;
+            
+            if ($user->isStudent() && $user->free_trial_expires_at) {
+                $expiresAt = $user->free_trial_expires_at;
+                $daysRemaining = max(0, now()->diffInDays($user->free_trial_expires_at, false));
+            } elseif ($user->premium_expires_at) {
+                $expiresAt = $user->premium_expires_at;
+                $daysRemaining = max(0, now()->diffInDays($user->premium_expires_at, false));
+            }
+            
             return response()->json([
                 'has_premium' => $user->has_premium,
-                'premium_expires_at' => $user->premium_expires_at?->format('Y-m-d H:i:s'),
+                'premium_expires_at' => $expiresAt?->format('Y-m-d H:i:s'),
+                'free_trial_expires_at' => $user->free_trial_expires_at?->format('Y-m-d H:i:s'),
                 'is_premium_active' => $user->hasPremiumAccess(),
-                'days_remaining' => $user->premium_expires_at ? max(0, now()->diffInDays($user->premium_expires_at, false)) : 0,
+                'is_on_trial' => $user->isOnTrial(),
+                'is_student' => $user->isStudent(),
+                'days_remaining' => $daysRemaining,
             ]);
         } catch (\Exception $e) {
             Log::error('Error getting subscription status', [
@@ -1122,12 +1137,20 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can register bank accounts',
+                'message' => 'Only creators and students can register bank accounts',
             ], 403);
+        }
+
+        // Students can't register bank accounts, return success with no changes
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Students cannot register bank accounts'
+            ]);
         }
 
         $request->validate([
@@ -1225,12 +1248,23 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can access bank information',
+                'message' => 'Only creators and students can access bank information',
             ], 403);
+        }
+
+        // Students don't have bank information, return empty data
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'has_bank_info' => false,
+                    'bank_info' => null
+                ]
+            ]);
         }
 
         try {
@@ -1283,12 +1317,20 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can update bank information',
+                'message' => 'Only creators and students can update bank information',
             ], 403);
+        }
+
+        // Students can't update bank information, return success with no changes
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Students cannot update bank information'
+            ]);
         }
 
         $request->validate([
@@ -1367,12 +1409,20 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can delete bank information',
+                'message' => 'Only creators and students can delete bank information',
             ], 403);
+        }
+
+        // Students can't delete bank information, return success with no changes
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Students cannot delete bank information'
+            ]);
         }
 
         try {
@@ -1412,12 +1462,28 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can access withdrawal history',
+                'message' => 'Only creators and students can access withdrawal history',
             ], 403);
+        }
+
+        // Students don't have withdrawal history, return empty data
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'data' => [],
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => 10,
+                    'total' => 0,
+                    'from' => null,
+                    'to' => null,
+                ]
+            ]);
         }
 
         try {
@@ -1450,12 +1516,20 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can request withdrawals',
+                'message' => 'Only creators and students can request withdrawals',
             ], 403);
+        }
+
+        // Students can't request withdrawals, return success with no changes
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Students cannot request withdrawals'
+            ]);
         }
 
         // Get the withdrawal method from database
@@ -1557,12 +1631,44 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can access earnings information',
+                'message' => 'Only creators and students can access earnings information',
             ], 403);
+        }
+
+        // Students don't have earnings, return empty data
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'balance' => [
+                        'available_balance' => 0,
+                        'pending_balance' => 0,
+                        'total_earned' => 0,
+                        'total_withdrawn' => 0,
+                        'formatted_available_balance' => 'R$ 0,00',
+                        'formatted_pending_balance' => 'R$ 0,00',
+                        'formatted_total_earned' => 'R$ 0,00',
+                        'formatted_total_withdrawn' => 'R$ 0,00',
+                    ],
+                    'earnings' => [
+                        'this_month' => 0,
+                        'this_year' => 0,
+                        'formatted_this_month' => 'R$ 0,00',
+                        'formatted_this_year' => 'R$ 0,00',
+                    ],
+                    'withdrawals' => [
+                        'pending_count' => 0,
+                        'pending_amount' => 0,
+                        'formatted_pending_amount' => 'R$ 0,00',
+                    ],
+                    'recent_transactions' => [],
+                    'recent_withdrawals' => [],
+                ]
+            ]);
         }
 
         try {
@@ -1622,12 +1728,20 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can access withdrawal methods',
+                'message' => 'Only creators and students can access withdrawal methods',
             ], 403);
+        }
+
+        // Students don't have withdrawal methods, return empty data
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'data' => []
+            ]);
         }
 
         try {

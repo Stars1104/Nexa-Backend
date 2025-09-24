@@ -23,6 +23,9 @@ class CampaignApplicationController extends Controller
         if ($user->isCreator()) {
             // Creators see their own applications
             $query->byCreator($user->id);
+        } elseif ($user->isStudent()) {
+            // Students see no applications (they can't apply)
+            $query->where('id', 0); // This will return no results
         } elseif ($user->isBrand()) {
             // Brands see applications for their campaigns
             $query->whereHas('campaign', function ($q) use ($user) {
@@ -63,9 +66,9 @@ class CampaignApplicationController extends Controller
     {
         $user = Auth::user();
 
-        // Only creators can apply
-        if (!$user->isCreator()) {
-            return response()->json(['message' => 'Only creators can apply to campaigns'], 403);
+        // Only creators and students can apply
+        if (!$user->isCreator() && !$user->isStudent()) {
+            return response()->json(['message' => 'Only creators and students can apply to campaigns'], 403);
         }
 
         // Check if campaign is active and approved
@@ -121,7 +124,7 @@ class CampaignApplicationController extends Controller
         $user = Auth::user();
 
         // Check if user has access to this application
-        if ($user->isCreator() && $application->creator_id !== $user->id) {
+        if (($user->isCreator() || $user->isStudent()) && $application->creator_id !== $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -229,8 +232,8 @@ class CampaignApplicationController extends Controller
     {
         $user = Auth::user();
 
-        // Only creators can withdraw their own applications
-        if (!$user->isCreator() || $application->creator_id !== $user->id) {
+        // Only creators and students can withdraw their own applications
+        if ((!$user->isCreator() && !$user->isStudent()) || $application->creator_id !== $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -295,6 +298,19 @@ class CampaignApplicationController extends Controller
 
         if ($user->isCreator()) {
             $query->byCreator($user->id);
+        } elseif ($user->isStudent()) {
+            // Students have no applications, return zero statistics
+            $statistics = [
+                'total' => 0,
+                'pending' => 0,
+                'approved' => 0,
+                'rejected' => 0,
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $statistics
+            ]);
         } elseif ($user->isBrand()) {
             $query->whereHas('campaign', function ($q) use ($user) {
                 $q->where('brand_id', $user->id);

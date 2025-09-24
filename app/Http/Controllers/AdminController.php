@@ -617,6 +617,177 @@ class AdminController extends Controller
     }
 
     /**
+     * Get all students with trial information
+     */
+    public function getStudents(Request $request): JsonResponse
+    {
+        $request->validate([
+            'status' => 'nullable|in:active,expired,premium',
+            'search' => 'nullable|string|max:255',
+            'per_page' => 'nullable|integer|min:1|max:100',
+            'page' => 'nullable|integer|min:1',
+        ]);
+
+        $status = $request->input('status');
+        $search = $request->input('search');
+        $perPage = $request->input('per_page', 10);
+        $page = $request->input('page', 1);
+
+        $query = User::where('student_verified', true);
+
+        // Filter by status
+        if ($status) {
+            switch ($status) {
+                case 'active':
+                    $query->where('free_trial_expires_at', '>', now())
+                          ->where('has_premium', false);
+                    break;
+                case 'expired':
+                    $query->where('free_trial_expires_at', '<=', now())
+                          ->where('has_premium', false);
+                    break;
+                case 'premium':
+                    $query->where('has_premium', true);
+                    break;
+            }
+        }
+
+        // Search functionality
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%");
+            });
+        }
+
+        $students = $query->orderBy('created_at', 'desc')
+            ->paginate($perPage, ['*'], 'page', $page);
+
+        $transformedStudents = $students->getCollection()->map(function ($student) {
+            return $this->transformStudentData($student);
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $transformedStudents,
+            'pagination' => [
+                'current_page' => $students->currentPage(),
+                'last_page' => $students->lastPage(),
+                'per_page' => $students->perPage(),
+                'total' => $students->total(),
+                'from' => $students->firstItem(),
+                'to' => $students->lastItem(),
+            ]
+        ]);
+    }
+
+    /**
+     * Update student trial period
+     */
+    public function updateStudentTrial(Request $request, User $student): JsonResponse
+    {
+        $request->validate([
+            'period' => 'required|in:1month,6months,1year',
+        ]);
+
+        if (!$student->student_verified) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User is not a verified student'
+            ], 422);
+        }
+
+        try {
+            $period = $request->input('period');
+            $expiresAt = match($period) {
+                '1month' => now()->addMonth(),
+                '6months' => now()->addMonths(6),
+                '1year' => now()->addYear(),
+                default => now()->addMonth(),
+            };
+
+            $student->update([
+                'free_trial_expires_at' => $expiresAt,
+            ]);
+
+            // Log the trial update
+            \Illuminate\Support\Facades\Log::info('Student trial period updated', [
+                'student_id' => $student->id,
+                'student_email' => $student->email,
+                'period' => $period,
+                'new_expires_at' => $expiresAt,
+                'updated_by' => auth()->user()->email,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Student trial period updated successfully',
+                'student' => $this->transformStudentData($student->fresh())
+            ]);
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to update student trial period', [
+                'student_id' => $student->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update student trial period'
+            ], 500);
+        }
+    }
+
+    /**
+     * Transform student data for admin interface
+     */
+    private function transformStudentData(User $student): array
+    {
+        $now = now();
+        $trialExpiresAt = $student->free_trial_expires_at;
+        
+        // Determine status
+        $status = 'active';
+        if ($student->has_premium) {
+            $status = 'premium';
+        } elseif ($trialExpiresAt && $trialExpiresAt->isPast()) {
+            $status = 'expired';
+        }
+
+        // Determine trial status
+        $trialStatus = 'active';
+        if ($student->has_premium) {
+            $trialStatus = 'premium';
+        } elseif ($trialExpiresAt && $trialExpiresAt->isPast()) {
+            $trialStatus = 'expired';
+        }
+
+        // Calculate days remaining
+        $daysRemaining = 0;
+        if ($trialExpiresAt && $trialExpiresAt->isFuture()) {
+            $daysRemaining = $now->diffInDays($trialExpiresAt, false);
+        }
+
+        return [
+            'id' => $student->id,
+            'name' => $student->name,
+            'email' => $student->email,
+            'academic_email' => $student->academic_email ?? null,
+            'institution' => $student->institution ?? null,
+            'course_name' => $student->course_name ?? null,
+            'student_verified' => $student->student_verified,
+            'student_expires_at' => $student->student_expires_at,
+            'free_trial_expires_at' => $student->free_trial_expires_at,
+            'has_premium' => $student->has_premium,
+            'created_at' => $student->created_at,
+            'status' => $status,
+            'trial_status' => $trialStatus,
+            'days_remaining' => $daysRemaining,
+        ];
+    }
+
+    /**
      * Get all guides for admin management
      */
     public function getGuides(): JsonResponse
