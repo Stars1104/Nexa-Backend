@@ -37,17 +37,18 @@ class PremiumAccessMiddleware
             return $next($request);
         }
 
-        // Only apply to creators
-        if (!$user->isCreator()) {
-            Log::info('PremiumAccessMiddleware: User is not a creator, allowing access', [
+        // Only apply to creators and students
+        if (!$user->isCreator() && !$user->isStudent()) {
+            Log::info('PremiumAccessMiddleware: User is not a creator or student, allowing access', [
                 'role' => $user->role,
                 'path' => $request->path()
             ]);
             return $next($request);
         }
 
-        // For creators, check if they have premium access for restricted features
-        // But allow access to basic chat functionality even without premium
+        // For creators and students, check if they have premium access for restricted features
+        // Students can access campaign applications without premium
+        // Creators need premium for campaign applications
         
         // Get the current path
         $currentPath = $request->path();
@@ -57,7 +58,7 @@ class PremiumAccessMiddleware
             'api/campaigns', // Campaign applications
             'api/connections', // Connection requests
             'api/direct-chat', // Direct messaging
-            'api/portfolio', // Portfolio management
+            // Note: Portfolio management is now allowed for all creators
         ];
         
         // Check if current path requires premium
@@ -72,6 +73,15 @@ class PremiumAccessMiddleware
         // If path doesn't require premium, allow access
         if (!$requiresPremium) {
             Log::info('PremiumAccessMiddleware: Path does not require premium, allowing access', [
+                'path' => $currentPath,
+                'userId' => $user->id
+            ]);
+            return $next($request);
+        }
+        
+        // For students, allow access to campaign applications without premium
+        if ($user->isStudent() && str_starts_with($currentPath, 'api/campaigns')) {
+            Log::info('PremiumAccessMiddleware: Student accessing campaign applications, allowing without premium', [
                 'path' => $currentPath,
                 'userId' => $user->id
             ]);

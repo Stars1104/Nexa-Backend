@@ -20,12 +20,46 @@ class CreatorBalanceController extends Controller
     {
         $user = Auth::user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can access balance information',
+                'message' => 'Only creators and students can access balance information',
             ], 403);
+        }
+
+        // Students don't have balance information, return empty data
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'balance' => [
+                        'available_balance' => 0,
+                        'pending_balance' => 0,
+                        'total_balance' => 0,
+                        'total_earned' => 0,
+                        'total_withdrawn' => 0,
+                        'formatted_available_balance' => 'R$ 0,00',
+                        'formatted_pending_balance' => 'R$ 0,00',
+                        'formatted_total_balance' => 'R$ 0,00',
+                        'formatted_total_earned' => 'R$ 0,00',
+                        'formatted_total_withdrawn' => 'R$ 0,00',
+                    ],
+                    'earnings' => [
+                        'this_month' => 0,
+                        'this_year' => 0,
+                        'formatted_this_month' => 'R$ 0,00',
+                        'formatted_this_year' => 'R$ 0,00',
+                    ],
+                    'withdrawals' => [
+                        'pending_count' => 0,
+                        'pending_amount' => 0,
+                        'formatted_pending_amount' => 'R$ 0,00',
+                    ],
+                    'recent_transactions' => [],
+                    'recent_withdrawals' => [],
+                ]
+            ]);
         }
 
         try {
@@ -126,12 +160,28 @@ class CreatorBalanceController extends Controller
 
         $user = Auth::user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can access balance history',
+                'message' => 'Only creators and students can access balance history',
             ], 403);
+        }
+
+        // Students don't have balance history, return empty data
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'earnings' => [],
+                    'withdrawals' => [],
+                    'summary' => [
+                        'total_earnings' => 0,
+                        'total_withdrawals' => 0,
+                        'net_balance' => 0,
+                    ]
+                ]
+            ]);
         }
 
         try {
@@ -246,12 +296,20 @@ class CreatorBalanceController extends Controller
     {
         $user = Auth::user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can access withdrawal methods',
+                'message' => 'Only creators and students can access withdrawal methods',
             ], 403);
+        }
+
+        // Students don't have withdrawal methods, return empty data
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'data' => [],
+            ]);
         }
 
         try {
@@ -295,12 +353,28 @@ class CreatorBalanceController extends Controller
     {
         $user = Auth::user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can access work history',
+                'message' => 'Only creators and students can access work history',
             ], 403);
+        }
+
+        // Students don't have work history, return empty data
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'data' => [],
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => 10,
+                    'total' => 0,
+                    'from' => null,
+                    'to' => null,
+                ]
+            ]);
         }
 
         try {

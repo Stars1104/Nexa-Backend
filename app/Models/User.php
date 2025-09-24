@@ -407,6 +407,14 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * Check if the user is a student.
+     */
+    public function isStudent(): bool
+    {
+        return $this->role === 'student';
+    }
+
+    /**
      * Get the user's display name (includes company name for brands).
      */
     public function getDisplayNameAttribute(): string

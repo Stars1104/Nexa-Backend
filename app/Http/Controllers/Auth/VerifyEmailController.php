@@ -79,6 +79,7 @@ class VerifyEmailController extends Controller
                     'has_premium' => $user->has_premium,
                     'premium_expires_at' => $user->premium_expires_at,
                     'free_trial_expires_at' => $user->free_trial_expires_at,
+                    'isStudent' => $user->free_trial_expires_at && $user->free_trial_expires_at->diffInDays(now()) >= 25, // Check if user has 1-month trial (student)
                 ]
             ]);
         }

@@ -31,8 +31,8 @@ class CampaignController extends Controller
             error_log("Request" . json_encode($request));
 
             // Apply role-based filtering
-            if ($user->isCreator()) {
-                // Creators see only approved and active campaigns
+            if ($user->isCreator() || $user->isStudent()) {
+                // Creators and students see only approved and active campaigns
                 $query->approved()->active();
             } elseif ($user->isBrand()) {
                 // Brands see only their own campaigns
@@ -186,7 +186,7 @@ class CampaignController extends Controller
             $query = Campaign::with(['brand', 'approvedBy', 'bids']);
 
             // Apply role-based filtering
-            if ($user->isCreator()) {
+            if ($user->isCreator() || $user->isStudent()) {
                 $query->approved()->active();
             } elseif ($user->isBrand()) {
                 $query->where('brand_id', $user->id);
@@ -356,12 +356,12 @@ class CampaignController extends Controller
             $query = Campaign::with(['brand', 'bids']);
 
             // Role-based access control
-            if ($user->isCreator()) {
+            if ($user->isCreator() || $user->isStudent()) {
                 if ($status !== 'approved') {
                     return response()->json([
                         'success' => false,
                         'error' => 'Unauthorized',
-                        'message' => 'Creators can only view approved campaigns.'
+                        'message' => 'Creators and students can only view approved campaigns.'
                     ], 403);
                 }
 

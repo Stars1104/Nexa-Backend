@@ -112,6 +112,10 @@ class RegisteredUserController extends Controller
                 'nullable',
                 'boolean'
             ],
+            'isStudent' => [
+                'nullable',
+                'boolean'
+            ],
         ], [
             'name.required' => 'The name field is required.',
             'name.min' => 'The name must be at least 2 characters.',
@@ -167,6 +171,12 @@ class RegisteredUserController extends Controller
             'birth_date' => $request->birth_date ?? null,
         ]);
         
+        // Determine if user is a student
+        $isStudent = $request->isStudent ?? false;
+        
+        // Set free trial for students (1 month) or regular users (7 days)
+        $freeTrialExpiresAt = $isStudent ? now()->addMonth() : now()->addDays(7);
+        
         $user = User::create([
             'name' => trim($request->name),
             'email' => strtolower(trim($request->email)),
@@ -176,7 +186,7 @@ class RegisteredUserController extends Controller
             'avatar_url' => $avatarUrl,
             'bio' => $request->bio ? trim($request->bio) : null,
             'company_name' => $request->company_name ? trim($request->company_name) : null,
-            'student_verified' => false,
+            'student_verified' => false, // Will be set to true after verification
             'student_expires_at' => null,
             'gender' => $request->gender ?? 'other',
             'birth_date' => $request->birth_date ?? null,
@@ -184,7 +194,7 @@ class RegisteredUserController extends Controller
             'language' => null,
             'has_premium' => $request->has_premium ?? false,
             'premium_expires_at' => null,
-            'free_trial_expires_at' => null,
+            'free_trial_expires_at' => $freeTrialExpiresAt,
         ]);
         
         \Log::info('User created successfully', ['user_id' => $user->id]);
@@ -223,6 +233,7 @@ class RegisteredUserController extends Controller
                     'has_premium' => $user->has_premium,
                     'premium_expires_at' => $user->premium_expires_at,
                     'free_trial_expires_at' => $user->free_trial_expires_at,
+                    'isStudent' => $isStudent,
                 ],
                 'requires_email_verification' => true
             ], 201);
@@ -249,6 +260,7 @@ class RegisteredUserController extends Controller
                     'has_premium' => $user->has_premium,
                     'premium_expires_at' => $user->premium_expires_at,
                     'free_trial_expires_at' => $user->free_trial_expires_at,
+                    'isStudent' => $isStudent,
                 ],
                 'requires_email_verification' => false,
                 'email_verification_failed' => true
