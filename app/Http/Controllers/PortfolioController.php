@@ -600,9 +600,9 @@ class PortfolioController extends Controller
                 ], 401);
             }
 
-            // Find the creator
+            // Find the creator or student
             $creator = User::where('id', $creatorId)
-                ->where('role', 'creator')
+                ->whereIn('role', ['creator', 'student'])
                 ->with(['portfolio.items', 'receivedReviews.contract.brand'])
                 ->first();
 

@@ -558,12 +558,11 @@ class ReviewController extends Controller
             ->groupBy('rating')
             ->orderBy('rating', 'desc')
             ->get()
-            ->keyBy('rating')
-            ->toArray();
+            ->keyBy('rating');
 
         $result = [];
         for ($i = 5; $i >= 1; $i--) {
-            $result[$i] = $distribution[$i]['count'] ?? 0;
+            $result[$i] = $distribution[$i]->count ?? 0;
         }
 
         return $result;

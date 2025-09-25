@@ -40,16 +40,24 @@ class GoogleController extends Controller
                 'has_code' => $request->has('code'),
                 'has_role' => $request->has('role'),
                 'role' => $request->input('role'),
+                'has_is_student' => $request->has('is_student'),
+                'is_student' => $request->input('is_student'),
             ]);
             
             $googleUser = Socialite::driver('google')->stateless()->user();
             
             // Get role from request or default to creator
             $role = $request->input('role', 'creator');
+            $isStudent = $request->boolean('is_student', false);
             
             // Validate role
-            if (!in_array($role, ['creator', 'brand'])) {
+            if (!in_array($role, ['creator', 'brand', 'student'])) {
                 $role = 'creator'; // Default to creator if invalid role
+            }
+            
+            // If user wants to be a student, set role to 'student'
+            if ($isStudent) {
+                $role = 'student';
             }
             
             // Check if user already exists by Google ID or email
@@ -58,9 +66,12 @@ class GoogleController extends Controller
                        ->first();
             
             if ($user) {
+                // Prepare update data
+                $updateData = [];
+                
                 // Update Google ID if not set
                 if (!$user->google_id) {
-                    $user->update([
+                    $updateData = array_merge($updateData, [
                         'google_id' => $googleUser->getId(),
                         'google_token' => $googleUser->token,
                         'google_refresh_token' => $googleUser->refreshToken,
@@ -70,7 +81,19 @@ class GoogleController extends Controller
                 
                 // Update role if provided and different
                 if ($role && $user->role !== $role) {
-                    $user->update(['role' => $role]);
+                    $updateData['role'] = $role;
+                }
+                
+                // If user wants to be a student, update role and give trial access
+                // They need to complete the education history form for full verification
+                if ($isStudent && !$user->student_verified) {
+                    $updateData['free_trial_expires_at'] = now()->addMonth(); // Grant 1 month free trial
+                    // Don't set student_verified = true yet - they need to complete the form first
+                }
+                
+                // Apply updates if any
+                if (!empty($updateData)) {
+                    $user->update($updateData);
                 }
                 
                 $token = $user->createToken('auth_token')->plainTextToken;
@@ -97,8 +120,8 @@ class GoogleController extends Controller
                     'message' => 'Login successful'
                 ], 200);
             } else {
-                // Create new user with the specified role
-                $user = User::create([
+                // Prepare user data
+                $userData = [
                     'name' => $googleUser->getName(),
                     'email' => $googleUser->getEmail(),
                     'password' => Hash::make('12345678'), // Default password for OAuth users
@@ -108,7 +131,19 @@ class GoogleController extends Controller
                     'google_token' => $googleUser->token,
                     'google_refresh_token' => $googleUser->refreshToken,
                     'email_verified_at' => now(), // Google users are pre-verified
-                ]);
+                    'birth_date' => '1990-01-01', // Default birth date for OAuth users
+                    'gender' => 'other', // Default gender
+                ];
+                
+                // If user is a student, set role to student and give trial access
+                // They need to complete the education history form for full verification
+                if ($isStudent) {
+                    $userData['free_trial_expires_at'] = now()->addMonth(); // Grant 1 month free trial
+                    // Don't set student_verified = true yet - they need to complete the form first
+                }
+                
+                // Create new user with the specified role
+                $user = User::create($userData);
                 
                 // Notify admin of new user registration
                 \App\Services\NotificationService::notifyAdminOfNewRegistration($user);
