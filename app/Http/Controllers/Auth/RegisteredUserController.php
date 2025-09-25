@@ -174,8 +174,8 @@ class RegisteredUserController extends Controller
         // Determine if user is a student
         $isStudent = $request->isStudent ?? false;
         
-        // Set free trial for students (1 month) or regular users (7 days)
-        $freeTrialExpiresAt = $isStudent ? now()->addMonth() : now()->addDays(7);
+        // Set free trial only for students (1 month), creators and brands get no free trial
+        $freeTrialExpiresAt = $isStudent ? now()->addMonth() : null;
         
         $user = User::create([
             'name' => trim($request->name),
@@ -195,6 +195,7 @@ class RegisteredUserController extends Controller
             'has_premium' => $request->has_premium ?? false,
             'premium_expires_at' => null,
             'free_trial_expires_at' => $freeTrialExpiresAt,
+            'email_verified_at' => now(), // Automatically mark email as verified
         ]);
         
         \Log::info('User created successfully', ['user_id' => $user->id]);
@@ -202,70 +203,37 @@ class RegisteredUserController extends Controller
         // Notify admin of new user registration
         \App\Services\NotificationService::notifyAdminOfNewRegistration($user);
         
-        // Send email verification notification
-        $emailSent = $user->sendEmailVerificationNotification();
+        // Generate token for immediate login
+        $token = $user->createToken('auth_token')->plainTextToken;
         
-        if ($emailSent) {
-            \Log::info('Email verification sent successfully to: ' . $user->email);
-        } else {
-            \Log::warning('Email verification failed for user: ' . $user->email);
-        }
+        \Log::info('User registration completed successfully', ['user_id' => $user->id, 'email' => $user->email]);
 
-        if ($emailSent) {
-            return response()->json([
-                'success' => true,
-                'message' => 'Registration successful! Please check your email to verify your account.',
-                'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'email_verified_at' => $user->email_verified_at,
-                    'role' => $user->role,
-                    'whatsapp' => $user->whatsapp,
-                    'avatar_url' => $user->avatar_url,
-                    'bio' => $user->bio,
-                    'company_name' => $user->company_name,
-                    'student_verified' => $user->student_verified,
-                    'student_expires_at' => $user->student_expires_at,
-                    'gender' => $user->gender,
-                    'state' => $user->state,
-                    'language' => $user->language,
-                    'has_premium' => $user->has_premium,
-                    'premium_expires_at' => $user->premium_expires_at,
-                    'free_trial_expires_at' => $user->free_trial_expires_at,
-                    'isStudent' => $isStudent,
-                ],
-                'requires_email_verification' => true
-            ], 201);
-        } else {
-            // Email verification failed, but registration succeeded
-            return response()->json([
-                'success' => true,
-                'message' => 'Registration successful! However, we could not send the verification email. Please contact support.',
-                'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'email_verified_at' => $user->email_verified_at,
-                    'role' => $user->role,
-                    'whatsapp' => $user->whatsapp,
-                    'avatar_url' => $user->avatar_url,
-                    'bio' => $user->bio,
-                    'company_name' => $user->company_name,
-                    'student_verified' => $user->student_verified,
-                    'student_expires_at' => $user->student_expires_at,
-                    'gender' => $user->gender,
-                    'state' => $user->state,
-                    'language' => $user->language,
-                    'has_premium' => $user->has_premium,
-                    'premium_expires_at' => $user->premium_expires_at,
-                    'free_trial_expires_at' => $user->free_trial_expires_at,
-                    'isStudent' => $isStudent,
-                ],
-                'requires_email_verification' => false,
-                'email_verification_failed' => true
-            ], 201);
-        }
+        return response()->json([
+            'success' => true,
+            'message' => 'Registration successful! Your account has been created and you are now logged in.',
+            'token' => $token,
+            'token_type' => 'Bearer',
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'email_verified_at' => $user->email_verified_at,
+                'role' => $user->role,
+                'whatsapp' => $user->whatsapp,
+                'avatar_url' => $user->avatar_url,
+                'bio' => $user->bio,
+                'company_name' => $user->company_name,
+                'student_verified' => $user->student_verified,
+                'student_expires_at' => $user->student_expires_at,
+                'gender' => $user->gender,
+                'state' => $user->state,
+                'language' => $user->language,
+                'has_premium' => $user->has_premium,
+                'premium_expires_at' => $user->premium_expires_at,
+                'free_trial_expires_at' => $user->free_trial_expires_at,
+                'isStudent' => $isStudent,
+            ]
+        ], 201);
     }
 
     /**

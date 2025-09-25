@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -11,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class User extends Authenticatable implements MustVerifyEmail
+class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable, SoftDeletes;
 
@@ -108,19 +107,6 @@ class User extends Authenticatable implements MustVerifyEmail
     ];
 
     // Relationships
-    /**
-     * Send the email verification notification.
-     */
-    public function sendEmailVerificationNotification()
-    {
-        // Use our intelligent email service with fallbacks
-        $result = \App\Services\EmailVerificationService::sendVerificationEmail($this);
-        
-        // Log the result for debugging
-        \Illuminate\Support\Facades\Log::info('Email verification result for user ' . $this->email . ': ' . json_encode($result));
-        
-        return $result['success'];
-    }
 
     public function campaigns(): HasMany
     {
@@ -353,6 +339,11 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function isOnTrial(): bool
     {
+        // If user has premium access, they are not on trial
+        if ($this->isPremium()) {
+            return false;
+        }
+        
         return !$this->has_premium && 
                ($this->free_trial_expires_at !== null && $this->free_trial_expires_at->isFuture());
     }
@@ -366,11 +357,17 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
-     * Check if the user has premium access (either premium or trial).
+     * Check if the user has premium access (either premium or trial for students only).
      */
     public function hasPremiumAccess(): bool
     {
-        return $this->isPremium() || $this->isOnTrial();
+        // For students, prioritize premium over trial access
+        if ($this->isStudent()) {
+            return $this->isPremium() || $this->isOnTrial();
+        }
+        
+        // For creators and brands, only allow premium access (no trial)
+        return $this->isPremium();
     }
 
     /**

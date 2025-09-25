@@ -186,6 +186,11 @@ class ChatController extends Controller
             $this->sendInitialOfferIfNeeded($room);
         }
 
+        // Also trigger for creators/students when they first load the chat
+        if (($user->isCreator() || $user->isStudent()) && $room->campaign_id && $room->messages()->count() === 0) {
+            $this->sendInitialOfferIfNeeded($room);
+        }
+
         // Mark messages as read for messages from other users
         $unreadMessages = $room->messages()
             ->where('sender_id', '!=', $user->id)
@@ -638,6 +643,9 @@ class ChatController extends Controller
                 'creator_id' => $request->creator_id,
                 'workflow_status' => $application->workflow_status,
             ]);
+            
+            // Send initial offer automatically when chat room is created
+            $this->sendInitialOfferIfNeeded($room);
         }
 
         return response()->json([

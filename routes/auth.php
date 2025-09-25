@@ -1,11 +1,9 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
-use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\RegisteredUserController;
-use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\Auth\GoogleController;
 use App\Http\Controllers\Auth\PagarMeAuthController;
 use Illuminate\Support\Facades\Route;
@@ -33,21 +31,6 @@ Route::put('/update-password', [NewPasswordController::class, 'update'])
     ->middleware('auth:sanctum')
     ->name('password.update');
 
-// Email Verification routes
-Route::get('/verify-email/{id}/{hash}', [VerifyEmailController::class, 'verifyFromLink'])
-    ->name('verification.verify');
-
-Route::get('/verify-email', [VerifyEmailController::class, 'verify'])
-    ->middleware(['auth:sanctum', 'signed', 'throttle:6,1'])
-    ->name('verification.verify.authenticated');
-
-Route::post('/resend-verification', [VerifyEmailController::class, 'resend'])
-    ->middleware(['auth:sanctum', 'throttle:6,1'])
-    ->name('verification.resend');
-
-Route::post('/email/verification-notification', [EmailVerificationNotificationController::class, 'store'])
-    ->middleware(['auth:sanctum', 'throttle:6,1']) 
-    ->name('verification.send');
 
 // Logout route (requires authentication)
 Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])

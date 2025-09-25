@@ -26,7 +26,7 @@ class CampaignController extends Controller
     {
         try {
             $user = auth()->user();
-            $query = Campaign::with(['brand', 'creator', 'bids']);
+            $query = Campaign::with(['brand', 'bids']);
 
             error_log("Request" . json_encode($request));
 
@@ -983,15 +983,15 @@ class CampaignController extends Controller
     }
 
     /**
-     * Toggle favorite status of a campaign (Creator only).
+     * Toggle favorite status of a campaign (Creator and Student).
      */
     public function toggleFavorite(Campaign $campaign): JsonResponse
     {
         try {
             $user = auth()->user();
 
-            if (!$user->isCreator()) {
-                return response()->json(['error' => 'Unauthorized. Creator access required.'], 403);
+            if (!$user->isCreator() && !$user->isStudent()) {
+                return response()->json(['error' => 'Unauthorized. Creator or student access required.'], 403);
             }
 
             $favorite = CampaignFavorite::where('creator_id', $user->id)
@@ -1030,15 +1030,15 @@ class CampaignController extends Controller
     }
 
     /**
-     * Get user's favorite campaigns (Creator only).
+     * Get user's favorite campaigns (Creator and Student).
      */
     public function getFavorites(Request $request): JsonResponse
     {
         try {
             $user = auth()->user();
 
-            if (!$user->isCreator()) {
-                return response()->json(['error' => 'Unauthorized. Creator access required.'], 403);
+            if (!$user->isCreator() && !$user->isStudent()) {
+                return response()->json(['error' => 'Unauthorized. Creator or student access required.'], 403);
             }
 
             $favorites = CampaignFavorite::where('creator_id', $user->id)
