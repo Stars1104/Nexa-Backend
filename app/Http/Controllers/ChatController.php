@@ -943,7 +943,7 @@ class ChatController extends Controller
     {
         try {
             // Use HTTP POST to Node.js socket server
-            \Illuminate\Support\Facades\Http::post('http://localhost:3001/emit', [
+            \Illuminate\Support\Facades\Http::post('http://localhost:3000/emit', [
                 'event' => $event,
                 'data' => $data,
             ]);

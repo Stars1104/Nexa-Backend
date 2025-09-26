@@ -25,6 +25,8 @@ const io = new Server(httpServer, {
 
 // Add HTTP endpoint for Laravel to emit events
 httpServer.on('request', (req, res) => {
+    console.log(`📥 HTTP Request: ${req.method} ${req.url}`);
+    
     if (req.method === 'POST' && req.url === '/emit') {
         let body = '';
         req.on('data', chunk => {
@@ -32,32 +34,41 @@ httpServer.on('request', (req, res) => {
         });
         req.on('end', () => {
             try {
+                console.log(`📦 Raw body received: ${body}`);
                 const { event, data } = JSON.parse(body);
                 
-                console.log(`Received event from Laravel: ${event}`, data);
-                console.log(`Event data roomId: ${data?.roomId}, event type: ${event}`);
+                console.log(`📨 Received event from Laravel: ${event}`, data);
+                console.log(`📨 Event data roomId: ${data?.roomId}, event type: ${event}`);
                 
                 // Emit the event to the appropriate room or all clients
                 if (event === 'new_message' && data.roomId) {
+                    // Get all sockets in the room before emitting
+                    io.in(data.roomId).fetchSockets().then(sockets => {
+                        console.log(`📊 Room ${data.roomId} has ${sockets.length} connected sockets:`, sockets.map(s => s.id));
+                    });
+                    
                     io.to(data.roomId).emit(event, data);
-                    console.log(`Emitted ${event} to room ${data.roomId}`);
+                    console.log(`📤 Emitted ${event} to room ${data.roomId}`);
                 } else if (data.roomId) {
                     io.to(data.roomId).emit(event, data);
-                    console.log(`Emitted ${event} to room ${data.roomId}`);
+                    console.log(`📤 Emitted ${event} to room ${data.roomId}`);
                 } else {
                     io.emit(event, data);
-                    console.log(`Broadcasted ${event} to all clients`);
+                    console.log(`📤 Broadcasted ${event} to all clients`);
                 }
                 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: true, message: 'Event emitted' }));
+                console.log(`✅ HTTP Response sent: 200 OK`);
             } catch (error) {
-                console.error('Error processing event from Laravel:', error);
+                console.error('❌ Error processing event from Laravel:', error);
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: false, error: error.message }));
+                console.log(`❌ HTTP Response sent: 400 Bad Request`);
             }
         });
     } else {
+        console.log(`❌ HTTP 404: ${req.method} ${req.url}`);
         res.writeHead(404);
         res.end();
     }
@@ -108,11 +119,11 @@ io.on('connection', (socket) => {
         }
         
         socket.join(roomId);
-        console.log(`Socket ${socket.id} joined room ${roomId}`);
+        console.log(`🚪 Socket ${socket.id} joined room ${roomId}`);
         
         // Log all sockets in the room
         io.in(roomId).fetchSockets().then(sockets => {
-            console.log(`Room ${roomId} now has ${sockets.length} sockets:`, sockets.map(s => s.id));
+            console.log(`📊 Room ${roomId} now has ${sockets.length} sockets:`, sockets.map(s => s.id));
         }).catch(error => {
             console.error(`Error fetching sockets for room ${roomId}:`, error);
         });
@@ -131,15 +142,15 @@ io.on('connection', (socket) => {
 
     // Handle new message
     socket.on('send_message', (data) => {
-        console.log('Received send_message event:', data);
+        console.log('📨 Received send_message event:', data);
         
         if (!data || !data.roomId || !data.message) {
-            console.error('Invalid message data received:', data);
+            console.error('❌ Invalid message data received:', data);
             return;
         }
         
         const { roomId, message, senderId, senderName, senderAvatar, messageType, fileData } = data;
-        console.log(`Broadcasting message to room ${roomId} from user ${senderId}`);
+        console.log(`📤 Broadcasting message to room ${roomId} from user ${senderId}`);
         
         // Broadcast message to ALL users in the room (including sender for synchronization)
         // Use io.to() for more reliable delivery
@@ -158,6 +169,7 @@ io.on('connection', (socket) => {
         // Log all sockets in the room
         io.in(roomId).fetchSockets().then(sockets => {
             const otherSockets = sockets.filter(s => s.id !== socket.id);
+            console.log(`📊 Room ${roomId} has ${sockets.length} total sockets, ${otherSockets.length} other sockets`);
         });
     });
 

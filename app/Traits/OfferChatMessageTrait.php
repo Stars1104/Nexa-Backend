@@ -27,6 +27,26 @@ trait OfferChatMessageTrait
             // Update chat room's last_message_at to ensure proper ordering
             $chatRoom->update(['last_message_at' => now()]);
 
+            // Load sender relationship for socket event
+            $message->load('sender');
+
+            // Emit socket event for real-time delivery
+            $socketData = [
+                'roomId' => $chatRoom->room_id,
+                'messageId' => $message->id,
+                'message' => $message->message,
+                'senderId' => $message->sender_id,
+                'senderName' => $message->sender ? $message->sender->name : 'System',
+                'senderAvatar' => $message->sender ? $message->sender->avatar_url : null,
+                'messageType' => $message->message_type,
+                'fileData' => null,
+                'offerData' => $data['offer_data'] ?? null,
+                'timestamp' => $message->created_at->toISOString(),
+            ];
+            
+            Log::info('Emitting socket event for offer message', $socketData);
+            $this->emitSocketEvent('new_message', $socketData);
+
             return $message;
 
         } catch (\Exception $e) {
@@ -59,6 +79,23 @@ trait OfferChatMessageTrait
             // Update chat room's last_message_at to ensure proper ordering
             $chatRoom->update(['last_message_at' => now()]);
 
+            // Emit socket event for real-time delivery
+            $socketData = [
+                'roomId' => $chatRoom->room_id,
+                'messageId' => $systemMessage->id,
+                'message' => $systemMessage->message,
+                'senderId' => null,
+                'senderName' => 'System',
+                'senderAvatar' => null,
+                'messageType' => $systemMessage->message_type,
+                'fileData' => null,
+                'offerData' => $data,
+                'timestamp' => $systemMessage->created_at->toISOString(),
+            ];
+            
+            Log::info('Emitting socket event for system message', $socketData);
+            $this->emitSocketEvent('new_message', $socketData);
+
             return $systemMessage;
 
         } catch (\Exception $e) {
@@ -69,6 +106,27 @@ trait OfferChatMessageTrait
             ]);
             
             return null;
+        }
+    }
+
+    /**
+     * Emit Socket.IO event for real-time updates
+     */
+    private function emitSocketEvent(string $event, array $data): void
+    {
+        try {
+            // Use HTTP POST to Node.js socket server
+            \Illuminate\Support\Facades\Http::post('http://localhost:3000/emit', [
+                'event' => $event,
+                'data' => $data,
+            ]);
+            
+            Log::info("Socket event emitted via HTTP: {$event}", $data);
+        } catch (\Exception $e) {
+            Log::error('Failed to emit socket event via HTTP', [
+                'event' => $event,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 } 
