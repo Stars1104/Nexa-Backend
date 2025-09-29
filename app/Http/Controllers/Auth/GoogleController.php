@@ -60,12 +60,29 @@ class GoogleController extends Controller
                 $role = 'student';
             }
             
-            // Check if user already exists by Google ID or email
-            $user = User::where('google_id', $googleUser->getId())
+            // Check if user already exists by Google ID or email (including soft deleted users)
+            $user = User::withTrashed()
+                       ->where('google_id', $googleUser->getId())
                        ->orWhere('email', $googleUser->getEmail())
                        ->first();
             
             if ($user) {
+                // Check if user is soft deleted (removed)
+                if ($user->trashed()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Sua conta foi removida da plataforma. Entre em contato com o suporte para mais informações.',
+                    ], 403);
+                }
+
+                // Check if user is blocked (not email verified)
+                if (!$user->email_verified_at) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Sua conta foi bloqueada. Entre em contato com o suporte para mais informações.',
+                    ], 403);
+                }
+
                 // Prepare update data
                 $updateData = [];
                 

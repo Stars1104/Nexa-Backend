@@ -740,6 +740,81 @@ class AdminController extends Controller
     }
 
     /**
+     * Update student status (activate, block, remove)
+     */
+    public function updateStudentStatus(Request $request, User $student): JsonResponse
+    {
+        $request->validate([
+            'action' => 'required|in:activate,block,remove',
+        ]);
+
+        if (!$student->student_verified) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User is not a verified student'
+            ], 422);
+        }
+
+        $action = $request->input('action');
+
+        try {
+            switch ($action) {
+                case 'activate':
+                    $student->update([
+                        'email_verified_at' => now(),
+                    ]);
+                    $message = 'Student activated successfully';
+                    break;
+
+                case 'block':
+                    $student->update([
+                        'email_verified_at' => null,
+                    ]);
+                    $message = 'Student blocked successfully';
+                    break;
+
+                case 'remove':
+                    $student->delete();
+                    $message = 'Student removed successfully';
+                    break;
+
+                default:
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Invalid action'
+                    ], 400);
+            }
+
+            // Log the action
+            \Illuminate\Support\Facades\Log::info('Student status updated', [
+                'student_id' => $student->id,
+                'student_email' => $student->email,
+                'action' => $action,
+                'updated_by' => auth()->user()->email,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'student' => $this->transformStudentData($student->fresh())
+            ]);
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to update student status', [
+                'student_id' => $student->id,
+                'action' => $action,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update student status: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Transform student data for admin interface
      */
     private function transformStudentData(User $student): array
@@ -781,6 +856,7 @@ class AdminController extends Controller
             'free_trial_expires_at' => $student->free_trial_expires_at,
             'has_premium' => $student->has_premium,
             'created_at' => $student->created_at,
+            'email_verified_at' => $student->email_verified_at,
             'status' => $status,
             'trial_status' => $trialStatus,
             'days_remaining' => $daysRemaining,

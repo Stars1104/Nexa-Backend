@@ -19,12 +19,9 @@ class StudentController extends Controller
     {
         $request->validate([
             'full_name' => 'required|string|max:255',
-            'academic_email' => 'required|email|max:255',
+            'purchase_email' => 'required|email|max:255',
             'cpf' => 'required|string|size:11',
-            'enrollment' => 'required|string|max:50',
-            'date_of_birth' => 'required|string|max:10',
             'course_name' => 'required|string|max:255',
-            'institution' => 'required|string|max:255',
         ]);
 
         try {
@@ -67,8 +64,7 @@ class StudentController extends Controller
                 Log::info('Student verification completed', [
                     'user_id' => $user->id,
                     'user_email' => $user->email,
-                    'academic_email' => $request->academic_email,
-                    'institution' => $request->institution,
+                    'purchase_email' => $request->purchase_email,
                     'course_name' => $request->course_name,
                     'student_expires_at' => $user->student_expires_at,
                     'free_trial_expires_at' => $user->free_trial_expires_at,
@@ -76,10 +72,8 @@ class StudentController extends Controller
 
                 // Notify admin of new student verification
                 \App\Services\NotificationService::notifyAdminOfNewStudentVerification($user, [
-                    'academic_email' => $request->academic_email,
-                    'institution' => $request->institution,
+                    'purchase_email' => $request->purchase_email,
                     'course_name' => $request->course_name,
-                    'enrollment' => $request->enrollment,
                 ]);
 
                 DB::commit();
