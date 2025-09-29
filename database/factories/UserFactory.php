@@ -36,7 +36,7 @@ class UserFactory extends Factory
             'company_name' => fake()->optional()->company(),
             'student_verified' => false,
             'student_expires_at' => null,
-            'gender' => fake()->optional()->randomElement(['male', 'female', 'other']),
+            'gender' => fake()->randomElement(['male', 'female', 'other']),
             'state' => fake()->optional()->state(),
             'language' => fake()->randomElement(['en', 'es', 'fr', 'de']),
             'has_premium' => false,

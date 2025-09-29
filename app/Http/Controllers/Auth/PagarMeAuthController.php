@@ -53,8 +53,9 @@ class PagarMeAuthController extends Controller
                 ], 401);
             }
 
-            // Find or create user
-            $user = User::where('account_id', $request->account_id)
+            // Find or create user (including soft deleted users)
+            $user = User::withTrashed()
+                       ->where('account_id', $request->account_id)
                        ->orWhere('email', $request->email)
                        ->first();
 
@@ -76,6 +77,21 @@ class PagarMeAuthController extends Controller
                     'email' => $request->email
                 ]);
             } else {
+                // Check if user is soft deleted (removed)
+                if ($user->trashed()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Sua conta foi removida da plataforma. Entre em contato com o suporte para mais informações.',
+                    ], 403);
+                }
+
+                // Check if user is blocked (not email verified)
+                if (!$user->email_verified_at) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Sua conta foi bloqueada. Entre em contato com o suporte para mais informações.',
+                    ], 403);
+                }
                 // Update existing user with account_id if not set
                 if (!$user->account_id) {
                     $user->update(['account_id' => $request->account_id]);

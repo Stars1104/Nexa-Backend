@@ -73,18 +73,18 @@ Route::get('/guides', [GuideController::class, 'index']);                 // Get
 Route::get('/guides/{guide}', [GuideController::class, 'show']);          // Get a single guide by ID
 
 // User status check (requires authentication) - with specific rate limiting
-Route::middleware(['auth:sanctum', 'throttle:user-status'])->get('/user', function (Request $request) {
+Route::middleware(['auth:sanctum', 'user.status', 'throttle:user-status'])->get('/user', function (Request $request) {
     return $request->user();
 });
 
 // Student verification routes (requires authentication)
-Route::middleware(['auth:sanctum'])->prefix('student')->group(function () {
+Route::middleware(['auth:sanctum', 'user.status'])->prefix('student')->group(function () {
     Route::post('/verify', [StudentController::class, 'verifyStudent']);
     Route::get('/status', [StudentController::class, 'getStudentStatus']);
 });
 
 // Authenticated user routes - with specific rate limiting per endpoint
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth:sanctum', 'user.status'])->group(function () {
     
     // Profile management (available to all authenticated users)
     Route::prefix('profile')->group(function () {
@@ -404,6 +404,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     // Student management
     Route::get('/students', [AdminController::class, 'getStudents']);
     Route::patch('/students/{student}/trial', [AdminController::class, 'updateStudentTrial'])->where('student', '[0-9]+');
+    Route::patch('/students/{student}/status', [AdminController::class, 'updateStudentStatus'])->where('student', '[0-9]+');
     
     // Withdrawal methods management
     Route::apiResource('withdrawal-methods', \App\Http\Controllers\Admin\WithdrawalMethodController::class);

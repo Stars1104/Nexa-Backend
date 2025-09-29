@@ -41,8 +41,8 @@ class LoginRequest extends FormRequest
     {
         $this->ensureIsNotRateLimited();
 
-        // Check if user exists first
-        $user = \App\Models\User::where('email', $this->input('email'))->first();
+        // Check if user exists first (including soft deleted users)
+        $user = \App\Models\User::withTrashed()->where('email', $this->input('email'))->first();
         
         if (!$user) {
             RateLimiter::hit($this->throttleKey());
@@ -51,7 +51,23 @@ class LoginRequest extends FormRequest
             ]);
         }
 
-        // User exists, now check password
+        // Check if user is soft deleted (removed)
+        if ($user->trashed()) {
+            RateLimiter::hit($this->throttleKey());
+            throw ValidationException::withMessages([
+                'email' => 'Sua conta foi removida da plataforma. Entre em contato com o suporte para mais informações.',
+            ]);
+        }
+
+        // Check if user is blocked (not email verified)
+        if (!$user->email_verified_at) {
+            RateLimiter::hit($this->throttleKey());
+            throw ValidationException::withMessages([
+                'email' => 'Sua conta foi bloqueada. Entre em contato com o suporte para mais informações.',
+            ]);
+        }
+
+        // User exists and is active, now check password
         if (!Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
             RateLimiter::hit($this->throttleKey());
             throw ValidationException::withMessages([
