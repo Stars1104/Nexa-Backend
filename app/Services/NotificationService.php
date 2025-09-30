@@ -262,6 +262,35 @@ class NotificationService
     }
 
     /**
+     * Send notification to admin about new student verification
+     */
+    public static function notifyAdminOfNewStudentVerification(User $user, array $studentData = []): void
+    {
+        try {
+            // Get all admin users
+            $adminUsers = User::where('role', 'admin')->get();
+            
+            foreach ($adminUsers as $admin) {
+                $notification = Notification::createSystemActivity($admin->id, array_merge($studentData, [
+                    'activity_type' => 'student_verification',
+                    'user_id' => $user->id,
+                    'user_name' => $user->name,
+                    'user_email' => $user->email,
+                    'student_verification_time' => now()->toISOString(),
+                ]));
+                
+                // Send real-time notification via Socket.IO
+                self::sendSocketNotification($admin->id, $notification);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to notify admin of new student verification', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
      * Notify creators about new project
      */
     public static function notifyCreatorsOfNewProject(Campaign $campaign): void
@@ -311,6 +340,23 @@ class NotificationService
             
             // Send real-time notification via Socket.IO
             self::sendSocketNotification($campaign->brand_id, $notification);
+
+            // Send email notification
+            try {
+                $campaign->load(['brand']);
+                if ($status === 'approved') {
+                    Mail::to($campaign->brand->email)->send(new \App\Mail\CampaignApproved($campaign));
+                } else {
+                    Mail::to($campaign->brand->email)->send(new \App\Mail\CampaignRejected($campaign));
+                }
+            } catch (\Exception $emailError) {
+                Log::error('Failed to send campaign status email', [
+                    'campaign_id' => $campaign->id,
+                    'brand_email' => $campaign->brand->email,
+                    'status' => $status,
+                    'error' => $emailError->getMessage()
+                ]);
+            }
         } catch (\Exception $e) {
             Log::error('Failed to notify brand of project status', [
                 'campaign_id' => $campaign->id,
@@ -1209,6 +1255,54 @@ class NotificationService
             Log::error('Failed to notify creator of milestone delay warning', [
                 'milestone_id' => $milestone->id,
                 'creator_id' => $milestone->contract->creator_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Notify creator about proposal approval
+     */
+    public static function notifyCreatorOfProposalApproval(CampaignApplication $application): void
+    {
+        try {
+            $application->load(['campaign.brand', 'creator']);
+            
+            $notification = Notification::create([
+                'user_id' => $application->creator_id,
+                'type' => 'proposal_approved',
+                'title' => '💖 Parabéns! Seu perfil foi selecionado!',
+                'message' => "Parabéns! Você tem a cara da marca e foi selecionada para uma parceria de sucesso! Prepare-se para mostrar todo o seu talento e representar a NEXA com criatividade e profissionalismo.",
+                'data' => [
+                    'application_id' => $application->id,
+                    'campaign_id' => $application->campaign_id,
+                    'campaign_title' => $application->campaign->title,
+                    'brand_id' => $application->campaign->brand_id,
+                    'brand_name' => $application->campaign->brand->name,
+                    'proposed_budget' => $application->proposed_budget,
+                    'estimated_delivery_days' => $application->estimated_delivery_days,
+                    'approved_at' => $application->approved_at->toISOString(),
+                ],
+                'read_at' => null,
+            ]);
+
+            // Send real-time notification via Socket.IO
+            self::sendSocketNotification($application->creator_id, $notification);
+
+            // Send email notification
+            try {
+                Mail::to($application->creator->email)->send(new \App\Mail\ProposalApproved($application));
+            } catch (\Exception $emailError) {
+                Log::error('Failed to send proposal approval email', [
+                    'application_id' => $application->id,
+                    'creator_email' => $application->creator->email,
+                    'error' => $emailError->getMessage()
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to notify creator of proposal approval', [
+                'application_id' => $application->id,
+                'creator_id' => $application->creator_id,
                 'error' => $e->getMessage()
             ]);
         }

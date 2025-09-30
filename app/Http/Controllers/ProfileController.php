@@ -49,9 +49,10 @@ class ProfileController extends Controller
                     'facebook_page' => $user->facebook_page,
                     'twitter_handle' => $user->twitter_handle,
                     'industry' => $user->industry,
+                    'niche' => $user->niche,
                     'state' => $user->state, // Return state directly instead of mapping to location
                     'language' => $user->language,
-                    'languages' => $user->language ? [$user->language] : ['English'],
+                    'languages' => $user->languages ?: ($user->language ? [$user->language] : []),
                     'categories' => ['General'], // Default categories
                     'has_premium' => $user->has_premium,
                     'student_verified' => $user->student_verified,
@@ -114,7 +115,8 @@ class ProfileController extends Controller
                 }
             }
 
-            $validator = Validator::make($request->all(), [
+            // Build validation rules dynamically
+            $validationRules = [
                 'name' => 'sometimes|string|max:255',
                 'email' => [
                     'sometimes',
@@ -129,18 +131,29 @@ class ProfileController extends Controller
                 'gender' => 'sometimes|string|max:50',
                 'birth_date' => 'sometimes|date',
                 'creator_type' => 'sometimes|string|in:ugc,influencer,both',
-                'instagram_handle' => 'sometimes|string|max:255',
                 'tiktok_handle' => 'sometimes|string|max:255',
                 'youtube_channel' => 'sometimes|string|max:255',
                 'facebook_page' => 'sometimes|string|max:255',
                 'twitter_handle' => 'sometimes|string|max:255',
                 'industry' => 'sometimes|string|max:255',
+                'niche' => 'sometimes|string|max:255',
                 'state' => 'sometimes|string|max:255', // Accept state directly instead of location
                 'language' => 'sometimes|string|max:50',
                 'languages' => 'sometimes|string', // JSON string for multiple languages
                 'categories' => 'sometimes|string', // JSON string for categories
                 'avatar' => 'sometimes|image|mimes:jpeg,png,jpg,gif|max:2048',
-            ]);
+            ];
+
+            // Handle Instagram validation based on creator type
+            $creatorType = $request->input('creator_type') ?? $user->creator_type ?? null;
+            
+            if ($creatorType === 'influencer' || $creatorType === 'both') {
+                $validationRules['instagram_handle'] = 'required|string|max:255';
+            } else {
+                $validationRules['instagram_handle'] = 'sometimes|string|max:255';
+            }
+
+            $validator = Validator::make($request->all(), $validationRules);
 
             // Handle avatar upload
             $hasAvatarFile = false;
@@ -187,7 +200,13 @@ class ProfileController extends Controller
             // Handle languages and categories
             if (isset($data['languages'])) {
                 $languages = json_decode($data['languages'], true);
-                $data['language'] = is_array($languages) && !empty($languages) ? $languages[0] : 'English';
+                if (is_array($languages) && !empty($languages)) {
+                    $data['languages'] = $languages;
+                    $data['language'] = $languages[0]; // Set first language as primary
+                } else {
+                    $data['languages'] = [];
+                    $data['language'] = null;
+                }
             }
 
             // Map gender values from frontend to backend
@@ -220,8 +239,8 @@ class ProfileController extends Controller
                 $data['state'] = $state;
             }
             
-            // Remove fields that shouldn't be updated directly
-            unset($data['languages'], $data['categories']);
+            // Remove fields that shouldn't be updated directly  
+            unset($data['categories']); // Keep languages for updating
 
             // Update user
             $user->update($data);
@@ -249,9 +268,10 @@ class ProfileController extends Controller
                     'facebook_page' => $user->facebook_page,
                     'twitter_handle' => $user->twitter_handle,
                     'industry' => $user->industry,
+                    'niche' => $user->niche,
                     'location' => $user->state,
                     'language' => $user->language,
-                    'languages' => $user->language ? [$user->language] : ['English'],
+                    'languages' => $user->languages ?: ($user->language ? [$user->language] : []),
                     'categories' => ['General'],
                     'has_premium' => $user->has_premium,
                     'student_verified' => $user->student_verified,

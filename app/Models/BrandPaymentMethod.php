@@ -28,14 +28,13 @@ class BrandPaymentMethod extends Model
     use HasFactory;
 
     protected $fillable = [
-        'brand_id',
-        'customer_id',
-        'payment_method_id',
-        'card_holder_name',
+        'user_id',
+        'pagarme_customer_id',
+        'pagarme_card_id',
         'card_brand',
         'card_last4',
-        'card_exp_month',
-        'card_exp_year',
+        'card_holder_name',
+        'card_hash',
         'is_default',
         'is_active',
     ];
@@ -48,11 +47,11 @@ class BrandPaymentMethod extends Model
     ];
 
     /**
-     * Get the user that owns this payment method.
+     * Get the user that owns this payment method
      */
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'brand_id');
+        return $this->belongsTo(User::class, 'user_id');
     }
 
     /**
@@ -76,7 +75,8 @@ class BrandPaymentMethod extends Model
      */
     public function setAsDefault(): void
     {
-        static::where('brand_id', $this->brand_id)
+        // Unset other default payment methods for this user
+        static::where('user_id', $this->user_id)
             ->where('id', '!=', $this->id)
             ->update(['is_default' => false]);
 

@@ -17,10 +17,14 @@ class CampaignApplicationController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = Auth::user();
-        $query = CampaignApplication::with(['campaign', 'creator', 'reviewer']);
+        $query = CampaignApplication::with(['campaign', 'creator', 'reviewer'])
+            ->whereHas('creator'); // Only include applications where creator still exists
 
         if ($user->isCreator()) {
             // Creators see their own applications
+            $query->byCreator($user->id);
+        } elseif ($user->isStudent()) {
+            // Students see their own applications (they can apply)
             $query->byCreator($user->id);
         } elseif ($user->isBrand()) {
             // Brands see applications for their campaigns
@@ -62,9 +66,9 @@ class CampaignApplicationController extends Controller
     {
         $user = Auth::user();
 
-        // Only creators can apply
-        if (!$user->isCreator()) {
-            return response()->json(['message' => 'Only creators can apply to campaigns'], 403);
+        // Only creators and students can apply
+        if (!$user->isCreator() && !$user->isStudent()) {
+            return response()->json(['message' => 'Only creators and students can apply to campaigns'], 403);
         }
 
         // Check if campaign is active and approved
@@ -120,7 +124,7 @@ class CampaignApplicationController extends Controller
         $user = Auth::user();
 
         // Check if user has access to this application
-        if ($user->isCreator() && $application->creator_id !== $user->id) {
+        if (($user->isCreator() || $user->isStudent()) && $application->creator_id !== $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -151,6 +155,9 @@ class CampaignApplicationController extends Controller
         }
 
         $application->approve($user->id);
+
+        // Notify creator about proposal approval
+        \App\Services\NotificationService::notifyCreatorOfProposalApproval($application);
 
         // Notify admin of application approval
         \App\Services\NotificationService::notifyAdminOfSystemActivity('application_approved', [
@@ -225,8 +232,8 @@ class CampaignApplicationController extends Controller
     {
         $user = Auth::user();
 
-        // Only creators can withdraw their own applications
-        if (!$user->isCreator() || $application->creator_id !== $user->id) {
+        // Only creators and students can withdraw their own applications
+        if ((!$user->isCreator() && !$user->isStudent()) || $application->creator_id !== $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -271,6 +278,7 @@ class CampaignApplicationController extends Controller
 
         $applications = $campaign->applications()
             ->with(['creator', 'reviewer'])
+            ->whereHas('creator') // Only include applications where creator still exists
             ->orderBy('created_at', 'desc')
             ->paginate(15);
 
@@ -289,6 +297,9 @@ class CampaignApplicationController extends Controller
         $query = CampaignApplication::query();
 
         if ($user->isCreator()) {
+            $query->byCreator($user->id);
+        } elseif ($user->isStudent()) {
+            // Students see their own application statistics
             $query->byCreator($user->id);
         } elseif ($user->isBrand()) {
             $query->whereHas('campaign', function ($q) use ($user) {

@@ -42,10 +42,12 @@ class BrandProfileController extends Controller
                     'name' => $user->name,
                     'email' => $user->email,
                     'avatar' => $user->avatar_url,
+                    'avatar_url' => $user->avatar_url,
                     'company_name' => $user->company_name,
                     'whatsapp_number' => $user->whatsapp_number,
                     'gender' => $user->gender,
                     'state' => $user->state,
+                    'languages' => $user->languages ? json_decode($user->languages, true) : [],
                     'role' => $user->role,
                     'created_at' => $user->created_at,
                     'updated_at' => $user->updated_at,
@@ -81,6 +83,23 @@ class BrandProfileController extends Controller
                 ], 403);
             }
 
+            $contentType = $request->header('Content-Type');
+            $isMultipart = strpos($contentType, 'multipart/form-data') !== false;
+            
+            error_log("Brand Profile - Is multipart: " . ($isMultipart ? 'true' : 'false'));
+
+            if ($isMultipart && empty($request->all()) && !empty($request->getContent())) {
+                error_log("Brand Profile - Attempting manual multipart parsing");
+                $parsedData = $this->parseMultipartData($request);
+                error_log("Brand Profile - Manually parsed data: " . json_encode($parsedData));
+                
+                foreach ($parsedData as $key => $value) {
+                    if ($key !== 'avatar') {
+                        $request->merge([$key => $value]);
+                    }
+                }
+            }
+
             $validator = Validator::make($request->all(), [
                 'username' => 'sometimes|string|max:255',
                 'email' => [
@@ -91,77 +110,31 @@ class BrandProfileController extends Controller
                 ],
                 'company_name' => 'sometimes|string|max:255',
                 'whatsapp_number' => 'sometimes|string|max:20',
-                'gender' => 'sometimes|string|in:male,female,other',
-                'state' => 'sometimes|string|max:255',
-                'avatar' => 'sometimes', // Allow both file and base64 string
+                'gender' => 'sometimes|nullable|string|in:male,female,other',
+                'state' => 'sometimes|nullable|string|max:255',
+                'avatar' => 'sometimes|image|mimes:jpeg,png,jpg,gif|max:2048',
             ]);
 
-            // Manual multipart parsing workaround for avatar upload
             $hasAvatarFile = false;
             $avatarFile = null;
-            $hasAvatarBase64 = false;
-            $avatarBase64 = null;
             
-            if (!$request->hasFile('avatar')) {
-                // Check if avatar is sent as base64 string
-                if ($request->has('avatar') && is_string($request->input('avatar'))) {
-                    $avatarInput = $request->input('avatar');
-                    if (strpos($avatarInput, 'data:image/') === 0) {
-                        $hasAvatarBase64 = true;
-                        $avatarBase64 = $avatarInput;
-                    }
-                }
-                
-                // Get the raw request content for file upload
-                $rawContent = $request->getContent();
-                $boundary = null;
-                
-                // Extract boundary from Content-Type header
-                $contentType = $request->header('Content-Type');
-                if (preg_match('/boundary=(.+)$/', $contentType, $matches)) {
-                    $boundary = '--' . trim($matches[1]);
-                }
-                
-                if ($boundary && strpos($rawContent, 'Content-Disposition: form-data; name="avatar"') !== false) {
-                    // Split by boundary
-                    $parts = explode($boundary, $rawContent);
-                    foreach ($parts as $part) {
-                        if (strpos($part, 'Content-Disposition: form-data; name="avatar"') !== false) {
-                            // Extract filename
-                            if (preg_match('/filename="([^"]+)"/', $part, $matches)) {
-                                $filename = $matches[1];
-                                
-                                // Extract file content (everything after the headers)
-                                $fileContent = substr($part, strpos($part, "\r\n\r\n") + 4);
-                                $fileContent = rtrim($fileContent, "\r\n-");
-                                
-                                if (!empty($fileContent)) {
-                                    $hasAvatarFile = true;
-                                    
-                                    // Create a temporary file
-                                    $tempPath = tempnam(sys_get_temp_dir(), 'avatar_');
-                                    file_put_contents($tempPath, $fileContent);
-                                    
-                                    // Create a Laravel UploadedFile object
-                                    $avatarFile = new \Illuminate\Http\UploadedFile(
-                                        $tempPath,
-                                        $filename,
-                                        mime_content_type($tempPath),
-                                        null,
-                                        true
-                                    );
-                                }
-                            }
-                            break;
-                        }
-                    }
-                }
-            } else {
+            if ($request->hasFile('avatar')) {
                 $hasAvatarFile = true;
                 $avatarFile = $request->file('avatar');
+                error_log("Brand Profile - Avatar file found via hasFile()");
+            } else {
+                if ($isMultipart && !empty($request->getContent())) {
+                    $parsedData = $this->parseMultipartData($request);
+                    if (isset($parsedData['avatar']) && $parsedData['avatar'] instanceof \Illuminate\Http\UploadedFile) {
+                        $hasAvatarFile = true;
+                        $avatarFile = $parsedData['avatar'];
+                        error_log("Brand Profile - Avatar file found via manual parsing");
+                    }
+                }
             }
 
             if ($validator->fails()) {
+                error_log("Brand Profile - Validation failed: " . json_encode($validator->errors()));
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
@@ -171,42 +144,48 @@ class BrandProfileController extends Controller
 
             $data = $validator->validated();
 
-            // Map username to name
             if (isset($data['username'])) {
                 $data['name'] = $data['username'];
                 unset($data['username']);
             }
 
-            // Handle avatar upload (file or base64)
             if ($hasAvatarFile && $avatarFile) {
-                // Delete old avatar if exists
                 if ($user->avatar_url && Storage::disk('public')->exists(str_replace('/storage/', '', $user->avatar_url))) {
                     Storage::disk('public')->delete(str_replace('/storage/', '', $user->avatar_url));
                 }
 
-                // Store new avatar
                 $avatarPath = $avatarFile->store('avatars', 'public');
                 $data['avatar_url'] = '/storage/' . $avatarPath;
-            } elseif ($hasAvatarBase64 && $avatarBase64) {
-                // Handle base64 avatar
-                $avatarResult = $this->handleAvatarUpload($avatarBase64, $user);
-                if (!$avatarResult['success']) {
-                    return response()->json($avatarResult, 400);
-                }
-                $data['avatar_url'] = $avatarResult['avatar_url'];
+                error_log("Brand Profile - Avatar stored at: " . $data['avatar_url']);
             }
 
-            // Remove avatar field from data array to prevent it from being saved directly
             unset($data['avatar']);
 
-            // Update user
             $user->update($data);
+
+            $user->refresh();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Profile updated successfully'
+                'message' => 'Profile updated successfully',
+                'data' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'avatar' => $user->avatar_url,
+                    'avatar_url' => $user->avatar_url,
+                    'company_name' => $user->company_name,
+                    'whatsapp_number' => $user->whatsapp_number,
+                    'gender' => $user->gender,
+                    'state' => $user->state,
+                    'languages' => $user->languages ? json_decode($user->languages, true) : [],
+                    'role' => $user->role,
+                    'created_at' => $user->created_at,
+                    'updated_at' => $user->updated_at,
+                ]
             ]);
         } catch (\Exception $e) {
+            error_log("Brand Profile - Error: " . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update profile: ' . $e->getMessage()
@@ -461,6 +440,70 @@ class BrandProfileController extends Controller
                 'message' => 'Failed to delete avatar: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Parse multipart form data manually
+     */
+    private function parseMultipartData(Request $request): array
+    {
+        $rawContent = $request->getContent();
+        $contentType = $request->header('Content-Type');
+        
+        // Extract boundary
+        if (!preg_match('/boundary=(.+)$/', $contentType, $matches)) {
+            return [];
+        }
+        
+        $boundary = '--' . trim($matches[1]);
+        $parts = explode($boundary, $rawContent);
+        $parsedData = [];
+        
+        foreach ($parts as $part) {
+            if (empty(trim($part)) || $part === '--') {
+                continue;
+            }
+            
+            // Parse headers
+            $headerEnd = strpos($part, "\r\n\r\n");
+            if ($headerEnd === false) {
+                continue;
+            }
+            
+            $headers = substr($part, 0, $headerEnd);
+            $content = substr($part, $headerEnd + 4);
+            $content = rtrim($content, "\r\n-");
+            
+            // Extract field name
+            if (preg_match('/name="([^"]+)"/', $headers, $matches)) {
+                $fieldName = $matches[1];
+                
+                // Check if it's a file
+                if (preg_match('/filename="([^"]+)"/', $headers, $matches)) {
+                    $filename = $matches[1];
+                    
+                    if (!empty($content)) {
+                        // Create temporary file
+                        $tempPath = tempnam(sys_get_temp_dir(), 'upload_');
+                        file_put_contents($tempPath, $content);
+                        
+                        // Create UploadedFile object
+                        $parsedData[$fieldName] = new \Illuminate\Http\UploadedFile(
+                            $tempPath,
+                            $filename,
+                            mime_content_type($tempPath),
+                            null,
+                            true
+                        );
+                    }
+                } else {
+                    // Regular field
+                    $parsedData[$fieldName] = $content;
+                }
+            }
+        }
+        
+        return $parsedData;
     }
 
     /**

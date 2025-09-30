@@ -67,5 +67,6 @@ class Kernel extends HttpKernel
         'admin' => \App\Http\Middleware\AdminMiddleware::class,
         'pagarme.auth' => \App\Http\Middleware\PagarMeAuthMiddleware::class,
         'premium.access' => \App\Http\Middleware\PremiumAccessMiddleware::class,
+        'user.status' => \App\Http\Middleware\CheckUserStatus::class,
     ];
 }

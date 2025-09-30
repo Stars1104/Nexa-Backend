@@ -130,19 +130,7 @@ class ReviewController extends Controller
                 'is_public' => $request->get('is_public', true),
             ]);
 
-            // Update reviewed user's statistics
-            try {
-                $reviewedUser = User::find($reviewedId);
-                if ($reviewedUser) {
-                    $reviewedUser->updateReviewStats();
-                }
-            } catch (\Exception $e) {
-                Log::error('Failed to update reviewed user stats', [
-                    'review_id' => $review->id,
-                    'reviewed_user_id' => $reviewedId,
-                    'error' => $e->getMessage()
-                ]);
-            }
+            // Note: Review statistics are automatically updated via the Review model's booted method
 
             // Update contract review status
             try {
@@ -263,23 +251,30 @@ class ReviewController extends Controller
                     'is_public' => $review->is_public,
                     'is_high_rating' => $review->isHighRating(),
                     'reviewer' => [
-                        'id' => $review->reviewer->id,
-                        'name' => $review->reviewer->name,
-                        'avatar_url' => $review->reviewer->avatar_url,
+                        'id' => $review->reviewer?->id,
+                        'name' => $review->reviewer?->name,
+                        'avatar_url' => $review->reviewer?->avatar_url,
                     ],
                     'contract' => [
-                        'id' => $review->contract->id,
-                        'title' => $review->contract->title,
+                        'id' => $review->contract?->id,
+                        'title' => $review->contract?->title,
                     ],
                     'created_at' => $review->created_at->format('Y-m-d H:i:s'),
                 ];
             });
 
-            // Get user stats
+            // Get rating distribution first
+            $ratingDistribution = $this->getRatingDistribution($user->id, $publicOnly === 'true' || $publicOnly === '1' || $publicOnly === true);
+            
+            // Calculate total reviews from distribution
+            $totalReviewsFromDistribution = array_sum($ratingDistribution);
+            
+            
+            // Get user stats - use distribution total if it's different from cached value
             $stats = [
                 'average_rating' => $user->average_rating ?? 0,
-                'total_reviews' => $user->total_reviews ?? 0,
-                'rating_distribution' => $this->getRatingDistribution($user->id, $publicOnly === 'true' || $publicOnly === '1' || $publicOnly === true),
+                'total_reviews' => $totalReviewsFromDistribution > 0 ? $totalReviewsFromDistribution : ($user->total_reviews ?? 0),
+                'rating_distribution' => $ratingDistribution,
             ];
 
             return response()->json([
@@ -335,18 +330,18 @@ class ReviewController extends Controller
                     'is_high_rating' => $review->isHighRating(),
                     'is_low_rating' => $review->isLowRating(),
                     'reviewer' => [
-                        'id' => $review->reviewer->id,
-                        'name' => $review->reviewer->name,
-                        'avatar_url' => $review->reviewer->avatar_url,
+                        'id' => $review->reviewer?->id,
+                        'name' => $review->reviewer?->name,
+                        'avatar_url' => $review->reviewer?->avatar_url,
                     ],
                     'reviewed' => [
-                        'id' => $review->reviewed->id,
-                        'name' => $review->reviewed->name,
-                        'avatar_url' => $review->reviewed->avatar_url,
+                        'id' => $review->reviewed?->id,
+                        'name' => $review->reviewed?->name,
+                        'avatar_url' => $review->reviewed?->avatar_url,
                     ],
                     'contract' => [
-                        'id' => $review->contract->id,
-                        'title' => $review->contract->title,
+                        'id' => $review->contract?->id,
+                        'title' => $review->contract?->title,
                     ],
                     'created_at' => $review->created_at->format('Y-m-d H:i:s'),
                 ],
@@ -563,12 +558,11 @@ class ReviewController extends Controller
             ->groupBy('rating')
             ->orderBy('rating', 'desc')
             ->get()
-            ->keyBy('rating')
-            ->toArray();
+            ->keyBy('rating');
 
         $result = [];
         for ($i = 5; $i >= 1; $i--) {
-            $result[$i] = $distribution[$i]['count'] ?? 0;
+            $result[$i] = $distribution[$i]->count ?? 0;
         }
 
         return $result;

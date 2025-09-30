@@ -33,11 +33,33 @@ class PortfolioController extends Controller
     {
         $user = Auth::user();
         
-        if (!$user->isCreator()) {
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can have portfolios'
+                'message' => 'Only creators and students can have portfolios'
             ], 403);
+        }
+
+        // Students don't have portfolios, return empty data
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'portfolio' => [
+                        'id' => null,
+                        'title' => null,
+                        'bio' => null,
+                        'profile_picture' => null,
+                        'created_at' => null,
+                        'updated_at' => null,
+                        'items' => []
+                    ],
+                    'items_count' => 0,
+                    'images_count' => 0,
+                    'videos_count' => 0,
+                    'is_complete' => false,
+                ]
+            ]);
         }
 
         $portfolio = $user->portfolio()->with(['items' => function ($query) {
@@ -72,11 +94,19 @@ class PortfolioController extends Controller
     {
         $user = Auth::user();
         
-        if (!$user->isCreator()) {
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can update portfolios'
+                'message' => 'Only creators and students can update portfolios'
             ], 403);
+        }
+
+        // Students can't update portfolios, return success with no changes
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Students cannot update portfolios'
+            ]);
         }
 
         // Log the request data for debugging
@@ -229,11 +259,19 @@ class PortfolioController extends Controller
     {
         $user = Auth::user();
         
-        if (!$user->isCreator()) {
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can upload portfolio media'
+                'message' => 'Only creators and students can upload portfolio media'
             ], 403);
+        }
+
+        // Students can't upload portfolio media, return success with no changes
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Students cannot upload portfolio media'
+            ]);
         }
 
         $validator = Validator::make($request->all(), [
@@ -323,11 +361,19 @@ class PortfolioController extends Controller
     {
         $user = Auth::user();
         
-        if (!$user->isCreator()) {
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can update portfolio items'
+                'message' => 'Only creators and students can update portfolio items'
             ], 403);
+        }
+
+        // Students can't update portfolio items, return success with no changes
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Students cannot update portfolio items'
+            ]);
         }
 
         // Check if user owns this portfolio item
@@ -377,11 +423,19 @@ class PortfolioController extends Controller
     {
         $user = Auth::user();
         
-        if (!$user->isCreator()) {
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can delete portfolio items'
+                'message' => 'Only creators and students can delete portfolio items'
             ], 403);
+        }
+
+        // Students can't delete portfolio items, return success with no changes
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Students cannot delete portfolio items'
+            ]);
         }
 
         // Check if user owns this portfolio item
@@ -420,11 +474,19 @@ class PortfolioController extends Controller
     {
         $user = Auth::user();
         
-        if (!$user->isCreator()) {
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can reorder portfolio items'
+                'message' => 'Only creators and students can reorder portfolio items'
             ], 403);
+        }
+
+        // Students can't reorder portfolio items, return success with no changes
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Students cannot reorder portfolio items'
+            ]);
         }
 
         $validator = Validator::make($request->all(), [
@@ -479,11 +541,26 @@ class PortfolioController extends Controller
     {
         $user = Auth::user();
         
-        if (!$user->isCreator()) {
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can view portfolio statistics'
+                'message' => 'Only creators and students can view portfolio statistics'
             ], 403);
+        }
+
+        // Students don't have portfolio statistics, return empty data
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'total_items' => 0,
+                    'images_count' => 0,
+                    'videos_count' => 0,
+                    'is_complete' => false,
+                    'has_minimum_items' => false,
+                    'profile_complete' => false,
+                ]
+            ]);
         }
 
         $portfolio = $user->portfolio()->with('items')->first();
@@ -523,9 +600,9 @@ class PortfolioController extends Controller
                 ], 401);
             }
 
-            // Find the creator
+            // Find the creator or student
             $creator = User::where('id', $creatorId)
-                ->where('role', 'creator')
+                ->whereIn('role', ['creator', 'student'])
                 ->with(['portfolio.items', 'receivedReviews.contract.brand'])
                 ->first();
 
@@ -572,7 +649,7 @@ class PortfolioController extends Controller
                     'creator_type' => $creator->creator_type,
                     'industry' => $creator->industry,
                     'language' => $creator->language,
-                    'languages' => $creator->language ? [$creator->language] : ['English'],
+                    'languages' => $creator->languages ?: ($creator->language ? [$creator->language] : []),
                     // Social media handles
                     'instagram_handle' => $creator->instagram_handle,
                     'tiktok_handle' => $creator->tiktok_handle,

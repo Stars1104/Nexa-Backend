@@ -26,13 +26,13 @@ class CampaignController extends Controller
     {
         try {
             $user = auth()->user();
-            $query = Campaign::with(['brand', 'creator', 'bids']);
+            $query = Campaign::with(['brand', 'bids']);
 
             error_log("Request" . json_encode($request));
 
             // Apply role-based filtering
-            if ($user->isCreator()) {
-                // Creators see only approved and active campaigns
+            if ($user->isCreator() || $user->isStudent()) {
+                // Creators and students see only approved and active campaigns
                 $query->approved()->active();
             } elseif ($user->isBrand()) {
                 // Brands see only their own campaigns
@@ -106,6 +106,17 @@ class CampaignController extends Controller
                           ->orWhereJsonContains('target_genders', $creator->gender);
                     });
                 }
+                
+                // Filter by social media requirements
+                // Only show campaigns that creators can qualify for based on their social media presence
+                if ($creator->creator_type === 'influencer' || $creator->creator_type === 'both') {
+                    // For influencers and both types, they must have Instagram to see campaigns
+                    if (!$creator->instagram_handle) {
+                        // If influencer/both doesn't have Instagram, don't show any campaigns
+                        $query->whereRaw('1 = 0'); // This will return no results
+                    }
+                }
+                // UGC creators can see all campaigns regardless of social media presence
             }
 
             // Search functionality
@@ -144,7 +155,9 @@ class CampaignController extends Controller
                     'from' => $campaigns->firstItem(),
                     'to' => $campaigns->lastItem(),
                 ]
-            ]);
+            ])->header('Cache-Control', 'no-cache, no-store, must-revalidate')
+              ->header('Pragma', 'no-cache')
+              ->header('Expires', '0');
         } catch (\Exception $e) {
             Log::error('Failed to retrieve campaigns: ' . $e->getMessage());
             return response()->json([
@@ -173,7 +186,7 @@ class CampaignController extends Controller
             $query = Campaign::with(['brand', 'approvedBy', 'bids']);
 
             // Apply role-based filtering
-            if ($user->isCreator()) {
+            if ($user->isCreator() || $user->isStudent()) {
                 $query->approved()->active();
             } elseif ($user->isBrand()) {
                 $query->where('brand_id', $user->id);
@@ -204,7 +217,9 @@ class CampaignController extends Controller
                 'success' => true,
                 'data' => $campaigns,
                 'count' => $campaigns->count()
-            ]);
+            ])->header('Cache-Control', 'no-cache, no-store, must-revalidate')
+              ->header('Pragma', 'no-cache')
+              ->header('Expires', '0');
         } catch (\Exception $e) {
             Log::error('Failed to retrieve all campaigns: ' . $e->getMessage());
             return response()->json([
@@ -341,12 +356,12 @@ class CampaignController extends Controller
             $query = Campaign::with(['brand', 'bids']);
 
             // Role-based access control
-            if ($user->isCreator()) {
+            if ($user->isCreator() || $user->isStudent()) {
                 if ($status !== 'approved') {
                     return response()->json([
                         'success' => false,
                         'error' => 'Unauthorized',
-                        'message' => 'Creators can only view approved campaigns.'
+                        'message' => 'Creators and students can only view approved campaigns.'
                     ], 403);
                 }
 
@@ -439,7 +454,9 @@ class CampaignController extends Controller
                     'from' => $campaigns->firstItem(),
                     'to' => $campaigns->lastItem(),
                 ],
-            ]);
+            ])->header('Cache-Control', 'no-cache, no-store, must-revalidate')
+              ->header('Pragma', 'no-cache')
+              ->header('Expires', '0');
         } catch (\Exception $e) {
             Log::error('Failed to retrieve campaigns: ' . $e->getMessage());
 
@@ -522,9 +539,8 @@ class CampaignController extends Controller
             // Notify admin of new campaign creation
             \App\Services\NotificationService::notifyAdminOfNewCampaign($campaign);
 
-            // Notify creators about new project (only when approved)
-            // This will be called when admin approves the campaign
-            // NotificationService::notifyCreatorsOfNewProject($campaign);
+            // Note: Creators will be notified when admin approves the campaign
+            // This prevents confusion where creators get notifications for campaigns they can't see
 
             return response()->json([
                 'success' => true,
@@ -967,15 +983,15 @@ class CampaignController extends Controller
     }
 
     /**
-     * Toggle favorite status of a campaign (Creator only).
+     * Toggle favorite status of a campaign (Creator and Student).
      */
     public function toggleFavorite(Campaign $campaign): JsonResponse
     {
         try {
             $user = auth()->user();
 
-            if (!$user->isCreator()) {
-                return response()->json(['error' => 'Unauthorized. Creator access required.'], 403);
+            if (!$user->isCreator() && !$user->isStudent()) {
+                return response()->json(['error' => 'Unauthorized. Creator or student access required.'], 403);
             }
 
             $favorite = CampaignFavorite::where('creator_id', $user->id)
@@ -1014,15 +1030,15 @@ class CampaignController extends Controller
     }
 
     /**
-     * Get user's favorite campaigns (Creator only).
+     * Get user's favorite campaigns (Creator and Student).
      */
     public function getFavorites(Request $request): JsonResponse
     {
         try {
             $user = auth()->user();
 
-            if (!$user->isCreator()) {
-                return response()->json(['error' => 'Unauthorized. Creator access required.'], 403);
+            if (!$user->isCreator() && !$user->isStudent()) {
+                return response()->json(['error' => 'Unauthorized. Creator or student access required.'], 403);
             }
 
             $favorites = CampaignFavorite::where('creator_id', $user->id)

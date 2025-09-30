@@ -83,17 +83,28 @@ class ChatController extends Controller
                 } elseif ($lastMessage && $lastMessage->sender_id === $room->creator_id) {
                     $otherUser = $room->creator;
                 } else {
-                    // If no messages, default to showing the creator
-                    $otherUser = $room->creator;
+                    // If no messages, default to showing the creator, but fallback to brand if creator is null
+                    $otherUser = $room->creator ?? $room->brand;
                 }
+            }
+            
+            // Additional safety check - if otherUser is still null, skip this room
+            if (!$otherUser) {
+                \Log::warning('Skipping chat room with null other user', [
+                    'room_id' => $room->room_id,
+                    'brand_id' => $room->brand_id,
+                    'creator_id' => $room->creator_id,
+                    'user_id' => $user->id,
+                ]);
+                return null;
             }
             
             return [
                 'id' => $room->id,
                 'room_id' => $room->room_id,
                 'campaign_id' => $room->campaign_id,
-                'campaign_title' => $room->campaign->title,
-                'campaign_status' => $room->campaign->status,
+                'campaign_title' => $room->campaign?->title ?? 'Campaign Not Found',
+                'campaign_status' => $room->campaign?->status ?? 'unknown',
                 'other_user' => [
                     'id' => $otherUser->id,
                     'name' => $otherUser->name,
@@ -113,11 +124,11 @@ class ChatController extends Controller
                     ->count(),
                 'last_message_at' => $room->last_message_at?->toISOString(),
             ];
-        });
+        })->filter(); // Remove null values
 
         return response()->json([
             'success' => true,
-            'data' => $formattedRooms,
+            'data' => $formattedRooms->values(), // Reset array keys
         ]);
     }
 
@@ -172,6 +183,11 @@ class ChatController extends Controller
 
         // Also check if we need to send initial offer when loading messages
         if ($user->isBrand() && $room->campaign_id && $room->messages()->count() === 0) {
+            $this->sendInitialOfferIfNeeded($room);
+        }
+
+        // Also trigger for creators/students when they first load the chat
+        if (($user->isCreator() || $user->isStudent()) && $room->campaign_id && $room->messages()->count() === 0) {
             $this->sendInitialOfferIfNeeded($room);
         }
 
@@ -468,7 +484,7 @@ class ChatController extends Controller
             }
 
             // Emit socket event for real-time delivery
-            $this->emitSocketEvent('new_message', [
+            $socketData = [
                 'roomId' => $room->room_id,
                 'messageId' => $message->id,
                 'message' => $message->message,
@@ -485,7 +501,10 @@ class ChatController extends Controller
                 ] : null,
                 'offerData' => $message->offer_data ? json_decode($message->offer_data, true) : null,
                 'timestamp' => $message->created_at->toISOString(),
-            ]);
+            ];
+            
+            \Log::info('Emitting socket event for message', $socketData);
+            $this->emitSocketEvent('new_message', $socketData);
 
             \Log::info('Message sent successfully', [
                 'message_id' => $message->id,
@@ -624,6 +643,9 @@ class ChatController extends Controller
                 'creator_id' => $request->creator_id,
                 'workflow_status' => $application->workflow_status,
             ]);
+            
+            // Send initial offer automatically when chat room is created
+            $this->sendInitialOfferIfNeeded($room);
         }
 
         return response()->json([
@@ -921,7 +943,7 @@ class ChatController extends Controller
     {
         try {
             // Use HTTP POST to Node.js socket server
-            \Illuminate\Support\Facades\Http::post('http://localhost:3001/emit', [
+            \Illuminate\Support\Facades\Http::post('http://localhost:3000/emit', [
                 'event' => $event,
                 'data' => $data,
             ]);

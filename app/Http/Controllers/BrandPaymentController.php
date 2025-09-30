@@ -60,36 +60,32 @@ class BrandPaymentController extends Controller
         }
 
         try {
-            // Check if customer already exists
+            // Extract card information from the card_hash (simplified approach)
+            // In a real implementation, you would decrypt or parse the card_hash
+            $cardInfo = $this->parseCardInfo($request->card_hash, $request->card_holder_name);
 
-            $existingMethod = BrandPaymentMethod::where('brand_id', $user->id)
-                ->where('card_holder_name', $user->name)
-                ->where('card_last4', $request->card_last4)
-                ->first();
-            
-            $paymentMethodCount = BrandPaymentMethod::where('brand_id', $user->id)
+            // Check if this card already exists for the user
+            $existingMethod = BrandPaymentMethod::where('user_id', $user->id)
+                ->where('card_hash', $request->card_hash)
                 ->where('is_active', true)
-                ->count();
-            
-            
+                ->first();
+
             if ($existingMethod) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'This card is already registered',
-                    'error' => 'duplicate_card'
+                    'message' => 'This payment method already exists',
                 ], 400);
             }
 
+            // Save payment method to database
             $paymentMethod = BrandPaymentMethod::create([
-                'brand_id' => $user->id,
-                'customer_id' => $request->customer_id,
-                'payment_method_id' => $request->payment_method_id,
-                'card_holder_name' => $user->name,
-                'card_brand'=> $request->card_brand,
-                'card_last4'=> $request->card_last4,
-                'card_exp_month'=> $request->card_exp_month,
-                'card_exp_year'=> $request->card_exp_year,
-                'is_default' => $request->is_default || (!$paymentMethodCount) ?? false,
+                'user_id' => $user->id,
+                'card_holder_name' => $request->card_holder_name,
+                'card_brand' => $cardInfo['brand'],
+                'card_last4' => $cardInfo['last4'],
+                'is_default' => $request->is_default ?? false,
+                'card_hash' => $request->card_hash,
+                'is_active' => true,
             ]);
 
             // If this is set as default, unset other default methods
@@ -102,8 +98,8 @@ class BrandPaymentController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Payment method added successfully',
-                'payment_method' => [
-                    'id' => $paymentMethod->id,
+                'data' => [
+                    'payment_method_id' => $paymentMethod->id,
                     'card_holder_name' => $paymentMethod->card_holder_name,
                     'card_brand' => $paymentMethod->card_brand,
                     'card_last4' => $paymentMethod->card_last4,
@@ -181,7 +177,7 @@ class BrandPaymentController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'payment_method_id' => 'required|exists:brand_payment_methods,id,brand_id,' . $user->id,
+            'payment_method_id' => 'required|exists:brand_payment_methods,id,user_id,' . $user->id,
         ]);
 
         if ($validator->fails()) {
@@ -216,7 +212,7 @@ class BrandPaymentController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'payment_method_id' => 'required|exists:brand_payment_methods,id,brand_id,' . $user->id,
+            'payment_method_id' => 'required|exists:brand_payment_methods,id,user_id,' . $user->id,
         ]);
 
         if ($validator->fails()) {
@@ -246,26 +242,30 @@ class BrandPaymentController extends Controller
     }
 
     /**
-     * Get customer from Pagar.me
+     * Parse card information from card hash
+     * This is a simplified implementation for testing
      */
-    private function getCustomerFromPagarMe(string $customerId): ?array
+    private function parseCardInfo(string $cardHash, string $cardHolderName): array
     {
-        try {
-            $response = Http::withHeaders([
-                'Authorization' => 'Basic ' . base64_encode($this->apiKey . ':'),
-                'Content-Type' => 'application/json',
-            ])->get($this->baseUrl . '/customers/' . $customerId);
-
-            if ($response->successful()) {
-                return $response->json();
-            }
-        } catch (\Exception $e) {
-            Log::error('Error fetching customer from Pagar.me', [
-                'customer_id' => $customerId,
-                'error' => $e->getMessage()
-            ]);
+        // Extract last 4 digits from card hash (simplified approach)
+        // In a real implementation, you would decrypt the card hash
+        $last4 = substr($cardHash, -4);
+        
+        // Determine card brand based on hash pattern (simplified)
+        $brand = 'Visa'; // Default brand
+        
+        if (strpos($cardHash, 'master') !== false) {
+            $brand = 'Mastercard';
+        } elseif (strpos($cardHash, 'amex') !== false) {
+            $brand = 'American Express';
+        } elseif (strpos($cardHash, 'elo') !== false) {
+            $brand = 'Elo';
         }
 
-        return null;
+        return [
+            'brand' => $brand,
+            'last4' => $last4,
+            'holder_name' => $cardHolderName
+        ];
     }
 } 

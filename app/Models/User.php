@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -11,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class User extends Authenticatable implements MustVerifyEmail
+class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable, SoftDeletes;
 
@@ -42,8 +41,10 @@ class User extends Authenticatable implements MustVerifyEmail
         'facebook_page',
         'twitter_handle',
         'industry',
+        'niche',
         'state',
         'language',
+        'languages',
         'has_premium',
         'premium_expires_at',
         'free_trial_expires_at',
@@ -62,7 +63,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'bank_account_name',
         'suspended_until',
         'suspension_reason',
-        'stripe_account_id'
+        'total_reviews',
+        'average_rating'
     ];
 
     /**
@@ -72,7 +74,6 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     protected $attributes = [
         'gender' => 'other',
-        'birth_date' => '1990-01-01',
         'student_verified' => false,
         'has_premium' => false,
     ];
@@ -102,22 +103,10 @@ class User extends Authenticatable implements MustVerifyEmail
         'free_trial_expires_at' => 'datetime',
         'suspended_until' => 'datetime',
         'birth_date' => 'date',
+        'languages' => 'array',
     ];
 
     // Relationships
-    /**
-     * Send the email verification notification.
-     */
-    public function sendEmailVerificationNotification()
-    {
-        // Use our intelligent email service with fallbacks
-        $result = \App\Services\EmailVerificationService::sendVerificationEmail($this);
-        
-        // Log the result for debugging
-        \Illuminate\Support\Facades\Log::info('Email verification result for user ' . $this->email . ': ' . json_encode($result));
-        
-        return $result['success'];
-    }
 
     public function campaigns(): HasMany
     {
@@ -350,6 +339,11 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function isOnTrial(): bool
     {
+        // If user has premium access, they are not on trial
+        if ($this->isPremium()) {
+            return false;
+        }
+        
         return !$this->has_premium && 
                ($this->free_trial_expires_at !== null && $this->free_trial_expires_at->isFuture());
     }
@@ -363,11 +357,17 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
-     * Check if the user has premium access (either premium or trial).
+     * Check if the user has premium access (either premium or trial for students only).
      */
     public function hasPremiumAccess(): bool
     {
-        return $this->isPremium() || $this->isOnTrial();
+        // For students, prioritize premium over trial access
+        if ($this->isStudent()) {
+            return $this->isPremium() || $this->isOnTrial();
+        }
+        
+        // For creators and brands, only allow premium access (no trial)
+        return $this->isPremium();
     }
 
     /**
@@ -404,6 +404,14 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * Check if the user is a student.
+     */
+    public function isStudent(): bool
+    {
+        return $this->role === 'student';
+    }
+
+    /**
      * Get the user's display name (includes company name for brands).
      */
     public function getDisplayNameAttribute(): string
@@ -421,12 +429,12 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function brandPaymentMethods(): HasMany
     {
-        return $this->hasMany(BrandPaymentMethod::class, 'brand_id');
+        return $this->hasMany(BrandPaymentMethod::class, 'user_id');
     }
 
     public function defaultPaymentMethod(): HasOne
     {
-        return $this->hasOne(BrandPaymentMethod::class, 'brand_id')->where('is_default', true);
+        return $this->hasOne(BrandPaymentMethod::class, 'user_id')->where('is_default', true);
     }
 
     /**

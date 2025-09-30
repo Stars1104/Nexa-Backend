@@ -346,17 +346,34 @@ class AdminController extends Controller
     public function approveCampaign(int $id): JsonResponse
     {
         try {
+            $user = auth()->user();
             $campaign = Campaign::findOrFail($id);
-            $campaign->update([
-                'status' => 'approved',
-                'is_active' => true,
+
+            if (!$campaign->isPending()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only pending campaigns can be approved'
+                ], 422);
+            }
+
+            // Use the model's approve method to ensure proper workflow
+            $campaign->approve($user->id);
+
+            // Notify admin of campaign approval
+            \App\Services\NotificationService::notifyAdminOfSystemActivity('campaign_approved', [
+                'campaign_id' => $campaign->id,
+                'campaign_title' => $campaign->title,
+                'brand_name' => $campaign->brand->name,
+                'approved_by' => $user->name,
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Campaign approved successfully'
+                'message' => 'Campaign approved successfully',
+                'data' => $campaign->load(['brand', 'approvedBy'])
             ]);
         } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to approve campaign: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to approve campaign'
@@ -370,17 +387,26 @@ class AdminController extends Controller
     public function rejectCampaign(int $id): JsonResponse
     {
         try {
+            $user = auth()->user();
             $campaign = Campaign::findOrFail($id);
-            $campaign->update([
-                'status' => 'rejected',
-                'is_active' => false,
-            ]);
+
+            if (!$campaign->isPending()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only pending campaigns can be rejected'
+                ], 422);
+            }
+
+            // Use the model's reject method to ensure proper workflow
+            $campaign->reject($user->id, 'Rejected by admin');
 
             return response()->json([
                 'success' => true,
-                'message' => 'Campaign rejected successfully'
+                'message' => 'Campaign rejected successfully',
+                'data' => $campaign->load(['brand', 'approvedBy'])
             ]);
         } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to reject campaign: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to reject campaign'
@@ -588,6 +614,253 @@ class AdminController extends Controller
         }
 
         return 'Pendente';
+    }
+
+    /**
+     * Get all students with trial information
+     */
+    public function getStudents(Request $request): JsonResponse
+    {
+        $request->validate([
+            'status' => 'nullable|in:active,expired,premium',
+            'search' => 'nullable|string|max:255',
+            'per_page' => 'nullable|integer|min:1|max:100',
+            'page' => 'nullable|integer|min:1',
+        ]);
+
+        $status = $request->input('status');
+        $search = $request->input('search');
+        $perPage = $request->input('per_page', 10);
+        $page = $request->input('page', 1);
+
+        $query = User::where('student_verified', true);
+
+        // Filter by status
+        if ($status) {
+            switch ($status) {
+                case 'active':
+                    $query->where('free_trial_expires_at', '>', now())
+                          ->where('has_premium', false);
+                    break;
+                case 'expired':
+                    $query->where('free_trial_expires_at', '<=', now())
+                          ->where('has_premium', false);
+                    break;
+                case 'premium':
+                    $query->where('has_premium', true);
+                    break;
+            }
+        }
+
+        // Search functionality
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%");
+            });
+        }
+
+        $students = $query->orderBy('created_at', 'desc')
+            ->paginate($perPage, ['*'], 'page', $page);
+
+        $transformedStudents = $students->getCollection()->map(function ($student) {
+            return $this->transformStudentData($student);
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $transformedStudents,
+            'pagination' => [
+                'current_page' => $students->currentPage(),
+                'last_page' => $students->lastPage(),
+                'per_page' => $students->perPage(),
+                'total' => $students->total(),
+                'from' => $students->firstItem(),
+                'to' => $students->lastItem(),
+            ]
+        ]);
+    }
+
+    /**
+     * Update student trial period
+     */
+    public function updateStudentTrial(Request $request, User $student): JsonResponse
+    {
+        $request->validate([
+            'period' => 'required|in:1month,6months,1year',
+        ]);
+
+        if (!$student->student_verified) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User is not a verified student'
+            ], 422);
+        }
+
+        try {
+            $period = $request->input('period');
+            $expiresAt = match($period) {
+                '1month' => now()->addMonth(),
+                '6months' => now()->addMonths(6),
+                '1year' => now()->addYear(),
+                default => now()->addMonth(),
+            };
+
+            $student->update([
+                'free_trial_expires_at' => $expiresAt,
+            ]);
+
+            // Log the trial update
+            \Illuminate\Support\Facades\Log::info('Student trial period updated', [
+                'student_id' => $student->id,
+                'student_email' => $student->email,
+                'period' => $period,
+                'new_expires_at' => $expiresAt,
+                'updated_by' => auth()->user()->email,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Student trial period updated successfully',
+                'student' => $this->transformStudentData($student->fresh())
+            ]);
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to update student trial period', [
+                'student_id' => $student->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update student trial period'
+            ], 500);
+        }
+    }
+
+    /**
+     * Update student status (activate, block, remove)
+     */
+    public function updateStudentStatus(Request $request, User $student): JsonResponse
+    {
+        $request->validate([
+            'action' => 'required|in:activate,block,remove',
+        ]);
+
+        if (!$student->student_verified) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User is not a verified student'
+            ], 422);
+        }
+
+        $action = $request->input('action');
+
+        try {
+            switch ($action) {
+                case 'activate':
+                    $student->update([
+                        'email_verified_at' => now(),
+                    ]);
+                    $message = 'Student activated successfully';
+                    break;
+
+                case 'block':
+                    $student->update([
+                        'email_verified_at' => null,
+                    ]);
+                    $message = 'Student blocked successfully';
+                    break;
+
+                case 'remove':
+                    $student->delete();
+                    $message = 'Student removed successfully';
+                    break;
+
+                default:
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Invalid action'
+                    ], 400);
+            }
+
+            // Log the action
+            \Illuminate\Support\Facades\Log::info('Student status updated', [
+                'student_id' => $student->id,
+                'student_email' => $student->email,
+                'action' => $action,
+                'updated_by' => auth()->user()->email,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'student' => $this->transformStudentData($student->fresh())
+            ]);
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to update student status', [
+                'student_id' => $student->id,
+                'action' => $action,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update student status: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Transform student data for admin interface
+     */
+    private function transformStudentData(User $student): array
+    {
+        $now = now();
+        $trialExpiresAt = $student->free_trial_expires_at;
+        
+        // Determine status
+        $status = 'active';
+        if ($student->has_premium) {
+            $status = 'premium';
+        } elseif ($trialExpiresAt && $trialExpiresAt->isPast()) {
+            $status = 'expired';
+        }
+
+        // Determine trial status
+        $trialStatus = 'active';
+        if ($student->has_premium) {
+            $trialStatus = 'premium';
+        } elseif ($trialExpiresAt && $trialExpiresAt->isPast()) {
+            $trialStatus = 'expired';
+        }
+
+        // Calculate days remaining
+        $daysRemaining = 0;
+        if ($trialExpiresAt && $trialExpiresAt->isFuture()) {
+            $daysRemaining = $now->diffInDays($trialExpiresAt, false);
+        }
+
+        return [
+            'id' => $student->id,
+            'name' => $student->name,
+            'email' => $student->email,
+            'academic_email' => $student->academic_email ?? null,
+            'institution' => $student->institution ?? null,
+            'course_name' => $student->course_name ?? null,
+            'student_verified' => $student->student_verified,
+            'student_expires_at' => $student->student_expires_at,
+            'free_trial_expires_at' => $student->free_trial_expires_at,
+            'has_premium' => $student->has_premium,
+            'created_at' => $student->created_at,
+            'email_verified_at' => $student->email_verified_at,
+            'status' => $status,
+            'trial_status' => $trialStatus,
+            'days_remaining' => $daysRemaining,
+        ];
     }
 
     /**

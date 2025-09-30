@@ -298,27 +298,21 @@ class Campaign extends Model
 
     /**
      * Get the targetStates attribute in camelCase for frontend compatibility
+     * Note: Let Laravel's casting handle the JSON conversion automatically
      */
-    public function getTargetStatesAttribute()
-    {
-        return $this->attributes['target_states'] ?? null;
-    }
+    // Removed custom accessor to allow proper JSON casting
 
     /**
      * Get the targetGenders attribute in camelCase for frontend compatibility
+     * Note: Let Laravel's casting handle the JSON conversion automatically
      */
-    public function getTargetGendersAttribute()
-    {
-        return $this->attributes['target_genders'] ?? null;
-    }
+    // Removed custom accessor to allow proper JSON casting
 
     /**
      * Get the targetCreatorTypes attribute in camelCase for frontend compatibility
+     * Note: Let Laravel's casting handle the JSON conversion automatically
      */
-    public function getTargetCreatorTypesAttribute()
-    {
-        return $this->attributes['target_creator_types'] ?? null;
-    }
+    // Removed custom accessor to allow proper JSON casting
 
     /**
      * Get the minAge attribute in camelCase for frontend compatibility

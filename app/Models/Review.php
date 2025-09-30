@@ -186,15 +186,21 @@ class Review extends Model
             return;
         }
 
-        $averageRating = Review::where('reviewed_id', $creator->id)
-            ->where('is_public', true)
-            ->avg('rating');
+        $publicReviews = Review::where('reviewed_id', $creator->id)
+            ->where('is_public', true);
+
+        $averageRating = $publicReviews->avg('rating');
+        $totalReviews = $publicReviews->count();
 
         $creator->update([
-            'average_rating' => round($averageRating ?: 0, 1),
-            'total_reviews' => Review::where('reviewed_id', $creator->id)
-                ->where('is_public', true)
-                ->count(),
+            'average_rating' => $averageRating ? round($averageRating, 1) : null,
+            'total_reviews' => $totalReviews,
+        ]);
+
+        Log::info('Updated creator review stats', [
+            'creator_id' => $creator->id,
+            'total_reviews' => $totalReviews,
+            'average_rating' => $averageRating ? round($averageRating, 1) : null,
         ]);
     }
 } 

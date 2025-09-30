@@ -8,7 +8,7 @@ use App\Models\Withdrawal;
 use App\Models\CreatorBalance;
 use App\Models\BankAccount;
 use App\Services\NotificationService;
-use App\Services\StripeService;
+use App\Services\PaymentSimulator;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Http;
@@ -29,14 +29,81 @@ class PaymentController extends Controller
         $this->baseUrl = config('services.pagarme.environment') === 'production' 
             ? 'https://api.pagar.me/core/v5' 
             : 'https://api.pagar.me/core/v5';
-        $this->stripe = $stripe;
+        
+        // Log simulation mode status
+        if (PaymentSimulator::isSimulationMode()) {
+            Log::info('Payment simulation mode is ENABLED - All payments will be simulated');
+        }
     }
 
-    public function registerStripeCustomer(Request $request): JsonResponse
+    /**
+     * Debug endpoint to test payment processing
+     */
+    public function debugPayment(Request $request): JsonResponse
     {
-        $user = auth()->user();
+        return response()->json([
+            'success' => true,
+            'message' => 'Debug endpoint working',
+            'data' => [
+                'user_authenticated' => auth()->check(),
+                'user_id' => auth()->id(),
+                'simulation_mode' => PaymentSimulator::isSimulationMode(),
+                'request_data' => $request->all(),
+                'headers' => $request->headers->all(),
+            ]
+        ]);
+    }
 
-        if (!$user) {
+    /**
+     * Process a subscription payment for creators
+     */
+    public function processSubscription(Request $request): JsonResponse
+    {
+        Log::info('Subscription payment request received', [
+            'request_data' => $request->except(['card_number', 'card_cvv']), // Don't log sensitive data
+            'user_agent' => $request->header('User-Agent'),
+            'ip' => $request->ip(),
+            'user_id' => auth()->id(),
+            'has_auth' => auth()->check(),
+        ]);
+
+        // Log all request data for debugging (remove in production)
+        Log::info('Full subscription request data for debugging', [
+            'all_data' => $request->all(),
+            'has_card_number' => $request->has('card_number'),
+            'has_card_cvv' => $request->has('card_cvv'),
+            'has_card_holder_name' => $request->has('card_holder_name'),
+            'has_card_expiration_date' => $request->has('card_expiration_date'),
+            'has_cpf' => $request->has('cpf'),
+            'subscription_plan_id' => $request->has('subscription_plan_id'),
+        ]);
+
+        // Check if Pagar.me is configured
+        if (empty($this->apiKey)) {
+            Log::error('Pagar.me API key not configured');
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated',
+            ], 401);
+        }
+
+        // Check if we're in test mode
+        $isTestMode = config('services.pagarme.environment') === 'sandbox' && 
+                     (config('app.env') === 'local' || config('app.env') === 'development');
+        
+        Log::info('Test mode check', [
+            'pagarme_environment' => config('services.pagarme.environment'),
+            'app_env' => config('app.env'),
+            'is_test_mode' => $isTestMode
+        ]);
+
+        // Check if user is authenticated
+        if (!auth()->check()) {
+            Log::error('User not authenticated for subscription payment', [
+                'ip' => $request->ip(),
+                'user_agent' => $request->header('User-Agent'),
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'User not authenticated',
@@ -44,17 +111,28 @@ class PaymentController extends Controller
         }
 
         try {
-            $customerId = $this->stripe->createCustomerForUser($user);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Stripe customer created successfully',
-                'customerId' => $customerId,
+            $request->validate([
+                'card_number' => 'required|string|size:16',
+                'card_holder_name' => 'required|string|max:255',
+                'card_expiration_date' => 'required|string|regex:/^\d{4}$/', // MMYY format - exactly 4 digits
+                'card_cvv' => 'required|string|min:3|max:4',
+                'cpf' => 'required|string|regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/', // CPF format validation
+                'subscription_plan_id' => 'required|integer|exists:subscription_plans,id',
             ]);
-        } catch (\Exception $e) {
-            Log::error('Error creating Stripe customer', [
-                'user_id' => $user->id,
-                'error' => $e->getMessage(),
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::error('Subscription validation failed', [
+                'errors' => $e->errors(),
+                'request_data' => $request->all(),
+                'user_id' => auth()->id(),
+                'has_auth' => auth()->check(),
+                'validation_rules' => [
+                    'card_number' => 'required|string|size:16',
+                    'card_holder_name' => 'required|string|max:255',
+                    'card_expiration_date' => 'required|string|regex:/^\d{4}$/',
+                    'card_cvv' => 'required|string|min:3|max:4',
+                    'cpf' => 'required|string|regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/',
+                    'subscription_plan_id' => 'required|integer|exists:subscription_plans,id',
+                ]
             ]);
 
             return response()->json([
@@ -63,48 +141,81 @@ class PaymentController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
-    }
 
-    public function createSetupIntent(Request $request): JsonResponse
-    {
-        try {
-            return $this->stripe->createSetupIntent($request);
-        } catch (\Exception $e) {
-            Log::error('Error creating Stripe Setup Intent', [
-                'user_id' => auth()->id(),
-                'error' => $e->getMessage(),
-            ]);
-
+        // Validate CPF
+        if (!$this->validateCPF($request->cpf)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to create Setup Intent',
-                'error' => $e->getMessage(),
-            ], 500);
+                'message' => 'CPF inválido. Por favor, verifique o número.',
+                'errors' => ['cpf' => ['CPF inválido. Use um CPF válido como: 111.444.777-35']]
+            ], 422);
         }
-    }
 
-    public function getCardInfoFromPaymentMethod(Request $request) {
-        try {
-            return $this->stripe->getCardInfoFromPaymentMethod($request->paymentMethodId);
-        } catch (\Exception $e) {
-            Log::error('Error retrieving card info from Payment Method', [
+        // Check if simulation mode is enabled
+        if (PaymentSimulator::isSimulationMode()) {
+            Log::info('Processing subscription in SIMULATION mode', [
                 'user_id' => auth()->id(),
-                'error' => $e->getMessage(),
+                'simulation_mode' => true
             ]);
+            
+            try {
+                DB::beginTransaction();
+                
+                $user = auth()->user();
+                
+                // Get the selected subscription plan
+                $subscriptionPlan = \App\Models\SubscriptionPlan::find($request->subscription_plan_id);
+                if (!$subscriptionPlan) {
+                    throw new \Exception('Invalid subscription plan');
+                }
+                
+                // Use PaymentSimulator to process the subscription
+                $simulationResult = PaymentSimulator::simulateSubscriptionPayment(
+                    $request->all(),
+                    $user,
+                    $subscriptionPlan
+                );
+                
+                if (!$simulationResult['success']) {
+                    throw new \Exception($simulationResult['message'] ?? 'Simulation failed');
+                }
 
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to retrieve card info',
-                'error' => $e->getMessage(),
-            ], 500);
+                DB::commit();
+
+                Log::info('SIMULATION: Subscription payment successful', [
+                    'user_id' => $user->id,
+                    'transaction_id' => $simulationResult['transaction_id'],
+                    'simulation_mode' => true
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Subscription payment processed successfully (SIMULATION)',
+                    'simulation' => true,
+                    'transaction' => [
+                        'id' => $simulationResult['transaction_id'],
+                        'status' => 'paid'
+                    ],
+                    'expires_at' => $simulationResult['expires_at']
+                ]);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('SIMULATION: Subscription payment failed', [
+                    'user_id' => auth()->id(),
+                    'error' => $e->getMessage(),
+                    'simulation_mode' => true
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Subscription payment failed: ' . $e->getMessage(),
+                ], 500);
+            }
+        } else {
+            Log::info('Not in simulation mode, proceeding with Pagar.me API call', [
+                'simulation_mode' => false
+            ]);
         }
-    }
-
-    /**
-     * Process a subscription payment for creators
-     */
-    public function processSubscription(Request $request): JsonResponse
-    {
 
         try {
             DB::beginTransaction();
@@ -338,11 +449,26 @@ class PaymentController extends Controller
                 ], 401);
             }
             
+            // For students, check trial period; for others, check premium
+            $expiresAt = null;
+            $daysRemaining = 0;
+            
+            if ($user->isStudent() && $user->free_trial_expires_at) {
+                $expiresAt = $user->free_trial_expires_at;
+                $daysRemaining = max(0, now()->diffInDays($user->free_trial_expires_at, false));
+            } elseif ($user->premium_expires_at) {
+                $expiresAt = $user->premium_expires_at;
+                $daysRemaining = max(0, now()->diffInDays($user->premium_expires_at, false));
+            }
+            
             return response()->json([
                 'has_premium' => $user->has_premium,
-                'premium_expires_at' => $user->premium_expires_at?->format('Y-m-d H:i:s'),
+                'premium_expires_at' => $expiresAt?->format('Y-m-d H:i:s'),
+                'free_trial_expires_at' => $user->free_trial_expires_at?->format('Y-m-d H:i:s'),
                 'is_premium_active' => $user->hasPremiumAccess(),
-                'days_remaining' => $user->premium_expires_at ? max(0, now()->diffInDays($user->premium_expires_at, false)) : 0,
+                'is_on_trial' => $user->isOnTrial(),
+                'is_student' => $user->isStudent(),
+                'days_remaining' => $daysRemaining,
             ]);
         } catch (\Exception $e) {
             Log::error('Error getting subscription status', [
@@ -362,6 +488,114 @@ class PaymentController extends Controller
      */
     public function processPaymentWithAccountId(Request $request): JsonResponse
     {
+        // Check if simulation mode is enabled
+        if (PaymentSimulator::isSimulationMode()) {
+            Log::info('Processing account payment in SIMULATION mode', [
+                'account_id' => $request->account_id,
+                'simulation_mode' => true
+            ]);
+            
+            try {
+                DB::beginTransaction();
+
+                // Find user by account_id
+                $user = User::where('account_id', $request->account_id)->first();
+                
+                if (!$user) {
+                    return response()->json([
+                        'message' => 'User not found with provided account_id',
+                    ], 404);
+                }
+
+                // Verify email matches
+                if ($user->email !== $request->email) {
+                    return response()->json([
+                        'message' => 'Email does not match account_id',
+                    ], 401);
+                }
+
+                // Use PaymentSimulator to process the account payment
+                $simulationResult = PaymentSimulator::simulateAccountPayment(
+                    $request->all(),
+                    $user
+                );
+                
+                if (!$simulationResult['success']) {
+                    throw new \Exception($simulationResult['message'] ?? 'Simulation failed');
+                }
+
+                // Create transaction record
+                $dbTransaction = Transaction::create([
+                    'user_id' => $user->id,
+                    'pagarme_transaction_id' => $simulationResult['transaction_id'],
+                    'status' => 'paid',
+                    'amount' => $request->amount,
+                    'payment_method' => 'account_balance',
+                    'payment_data' => [
+                        'simulation' => true,
+                        'account_id' => $request->account_id,
+                        'description' => $request->description,
+                    ],
+                    'paid_at' => now(),
+                ]);
+
+                // Update user premium status if it's a subscription payment
+                if (str_contains($request->description, 'Premium')) {
+                    $user->update([
+                        'has_premium' => true,
+                        'premium_expires_at' => now()->addMonth(),
+                    ]);
+
+                    // Notify admin of successful payment
+                    NotificationService::notifyAdminOfPayment($user, [
+                        'amount' => $request->amount,
+                        'transaction_id' => $simulationResult['transaction_id'],
+                        'payment_method' => 'account_balance',
+                        'account_id' => $request->account_id,
+                    ]);
+                }
+
+                DB::commit();
+
+                Log::info('SIMULATION: Account payment processed successfully', [
+                    'user_id' => $user->id,
+                    'account_id' => $request->account_id,
+                    'transaction_id' => $simulationResult['transaction_id'],
+                    'amount' => $request->amount,
+                    'simulation_mode' => true
+                ]);
+
+                return response()->json([
+                    'message' => 'Payment processed successfully (SIMULATION)',
+                    'simulation' => true,
+                    'transaction' => [
+                        'id' => $dbTransaction->id,
+                        'status' => 'paid',
+                        'amount' => $request->amount,
+                        'amount_in_real' => 'R$ ' . number_format($request->amount / 100, 2, ',', '.'),
+                    ],
+                    'user' => [
+                        'has_premium' => $user->has_premium,
+                        'premium_expires_at' => $user->premium_expires_at?->format('Y-m-d H:i:s'),
+                    ]
+                ], 200);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                
+                Log::error('SIMULATION: Account payment processing error', [
+                    'account_id' => $request->account_id,
+                    'email' => $request->email,
+                    'error' => $e->getMessage(),
+                    'simulation_mode' => true
+                ]);
+
+                return response()->json([
+                    'message' => 'Payment processing failed: ' . $e->getMessage(),
+                ], 500);
+            }
+        }
+
         // Check if Pagar.me is configured
         if (empty($this->apiKey)) {
             return response()->json([
@@ -799,12 +1033,20 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can register bank accounts',
+                'message' => 'Only creators and students can register bank accounts',
             ], 403);
+        }
+
+        // Students can't register bank accounts, return success with no changes
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Students cannot register bank accounts'
+            ]);
         }
 
         $request->validate([
@@ -902,12 +1144,23 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can access bank information',
+                'message' => 'Only creators and students can access bank information',
             ], 403);
+        }
+
+        // Students don't have bank information, return empty data
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'has_bank_info' => false,
+                    'bank_info' => null
+                ]
+            ]);
         }
 
         try {
@@ -960,12 +1213,20 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can update bank information',
+                'message' => 'Only creators and students can update bank information',
             ], 403);
+        }
+
+        // Students can't update bank information, return success with no changes
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Students cannot update bank information'
+            ]);
         }
 
         $request->validate([
@@ -1044,12 +1305,20 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can delete bank information',
+                'message' => 'Only creators and students can delete bank information',
             ], 403);
+        }
+
+        // Students can't delete bank information, return success with no changes
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Students cannot delete bank information'
+            ]);
         }
 
         try {
@@ -1089,12 +1358,28 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can access withdrawal history',
+                'message' => 'Only creators and students can access withdrawal history',
             ], 403);
+        }
+
+        // Students don't have withdrawal history, return empty data
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'data' => [],
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => 10,
+                    'total' => 0,
+                    'from' => null,
+                    'to' => null,
+                ]
+            ]);
         }
 
         try {
@@ -1127,27 +1412,41 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can request withdrawals',
+                'message' => 'Only creators and students can request withdrawals',
             ], 403);
         }
 
+        // Students can't request withdrawals, return success with no changes
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Students cannot request withdrawals'
+            ]);
+        }
+
         // Get the withdrawal method from database
-        $withdrawalMethod = \App\Models\WithdrawalMethod::findByCode($request->method);
+        $withdrawalMethod = \App\Models\WithdrawalMethod::findByCode($request->withdrawal_method ?? $request->method);
         
         if (!$withdrawalMethod) {
+            Log::error('Invalid withdrawal method requested', [
+                'user_id' => $user->id,
+                'requested_method' => $request->withdrawal_method ?? $request->method,
+                'available_methods' => \App\Models\WithdrawalMethod::getActiveMethods()->pluck('code')->toArray()
+            ]);
+            
             return response()->json([
                 'success' => false,
-                'message' => 'Invalid withdrawal method',
+                'message' => 'Invalid withdrawal method: ' . ($request->withdrawal_method ?? $request->method),
             ], 400);
         }
 
         $request->validate([
             'amount' => 'required|numeric|min:' . $withdrawalMethod->min_amount . '|max:' . $withdrawalMethod->max_amount,
-            'method' => 'required|string',
+            'withdrawal_method' => 'required|string',
         ]);
 
         try {
@@ -1170,7 +1469,8 @@ class PaymentController extends Controller
             }
 
             // Check if user has bank info for bank transfer
-            if ($request->method === 'bank_transfer') {
+            $withdrawalMethodCode = $request->withdrawal_method ?? $request->method;
+            if ($withdrawalMethodCode === 'bank_transfer') {
                 $bankAccount = BankAccount::where('user_id', $user->id)->first();
                 if (!$bankAccount) {
                     return response()->json([
@@ -1189,7 +1489,8 @@ class PaymentController extends Controller
                 'amount' => $request->amount,
                 'platform_fee' => 5.00, // 5% platform fee
                 'fixed_fee' => 5.00, // R$5 fixed platform fee
-                'withdrawal_method' => $request->method,
+                'withdrawal_method' => $withdrawalMethodCode,
+                'withdrawal_details' => $request->withdrawal_details ?? [],
                 'status' => 'pending',
                 'bank_account_id' => $bankAccountId,
             ]);
@@ -1226,12 +1527,44 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can access earnings information',
+                'message' => 'Only creators and students can access earnings information',
             ], 403);
+        }
+
+        // Students don't have earnings, return empty data
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'balance' => [
+                        'available_balance' => 0,
+                        'pending_balance' => 0,
+                        'total_earned' => 0,
+                        'total_withdrawn' => 0,
+                        'formatted_available_balance' => 'R$ 0,00',
+                        'formatted_pending_balance' => 'R$ 0,00',
+                        'formatted_total_earned' => 'R$ 0,00',
+                        'formatted_total_withdrawn' => 'R$ 0,00',
+                    ],
+                    'earnings' => [
+                        'this_month' => 0,
+                        'this_year' => 0,
+                        'formatted_this_month' => 'R$ 0,00',
+                        'formatted_this_year' => 'R$ 0,00',
+                    ],
+                    'withdrawals' => [
+                        'pending_count' => 0,
+                        'pending_amount' => 0,
+                        'formatted_pending_amount' => 'R$ 0,00',
+                    ],
+                    'recent_transactions' => [],
+                    'recent_withdrawals' => [],
+                ]
+            ]);
         }
 
         try {
@@ -1291,12 +1624,20 @@ class PaymentController extends Controller
     {
         $user = auth()->user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can access withdrawal methods',
+                'message' => 'Only creators and students can access withdrawal methods',
             ], 403);
+        }
+
+        // Students don't have withdrawal methods, return empty data
+        if ($user->isStudent()) {
+            return response()->json([
+                'success' => true,
+                'data' => []
+            ]);
         }
 
         try {

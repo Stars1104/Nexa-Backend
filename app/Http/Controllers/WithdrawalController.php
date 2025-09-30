@@ -33,6 +33,11 @@ class WithdrawalController extends Controller
         $withdrawalMethod = \App\Models\WithdrawalMethod::findByCode($request->withdrawal_method);
         
         if (!$withdrawalMethod) {
+            Log::error('Invalid withdrawal method requested', [
+                'user_id' => $user->id,
+                'requested_method' => $request->withdrawal_method,
+                'available_methods' => \App\Models\WithdrawalMethod::getActiveMethods()->pluck('code')->toArray()
+            ]);
             
             return response()->json([
                 'success' => false,
@@ -54,7 +59,7 @@ class WithdrawalController extends Controller
 
         // Build dynamic validation rules
         $validationRules = [
-            'amount' => 'required|numeric',
+            'amount' => 'required|numeric|min:0.01',
             'withdrawal_method' => 'required|string',
         ];
 
@@ -62,12 +67,18 @@ class WithdrawalController extends Controller
         if ($withdrawalMethod->code === 'pagarme_bank_transfer') {
             $validationRules['withdrawal_details'] = 'nullable|array';
         } else {
-            $validationRules['withdrawal_details'] = 'required|array';
+            $validationRules['withdrawal_details'] = 'nullable|array';
         }
 
         $validator = Validator::make($request->all(), $validationRules);
 
         if ($validator->fails()) {
+            Log::error('Withdrawal validation failed', [
+                'user_id' => $user->id,
+                'errors' => $validator->errors(),
+                'request_data' => $request->all()
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
@@ -90,19 +101,17 @@ class WithdrawalController extends Controller
             $balance = CreatorBalance::where('creator_id', $user->id)->first();
 
             if (!$balance) {
-                // Temporarily create balance for debugging
-                $balance = CreatorBalance::create([
-                    'creator_id' => $user->id,
-                    'available_balance' => 1000, // Temporary balance for testing
-                    'pending_balance' => 0,
-                    'total_earned' => 1000,
-                    'total_withdrawn' => 0,
+                Log::warning('No balance found for creator, creating new balance', [
+                    'creator_id' => $user->id
                 ]);
                 
-                // return response()->json([
-                //     'success' => false,
-                //     'message' => 'Balance not found',
-                // ], 404);
+                $balance = CreatorBalance::create([
+                    'creator_id' => $user->id,
+                    'available_balance' => 0,
+                    'pending_balance' => 0,
+                    'total_earned' => 0,
+                    'total_withdrawn' => 0,
+                ]);
             }
 
             // Check if user has sufficient balance
