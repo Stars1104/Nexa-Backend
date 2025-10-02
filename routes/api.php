@@ -203,10 +203,12 @@ Route::middleware(['auth:sanctum', 'throttle:notifications'])->group(function ()
 });
 
 // Portfolio routes (available to all authenticated creators)
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth:sanctum', 'user.status'])->group(function () {
     Route::get('/portfolio', [PortfolioController::class, 'show'])->middleware(['throttle:dashboard']);
-    Route::put('/portfolio/profile', [PortfolioController::class, 'updateProfile']);
+    Route::post('/portfolio/profile', [PortfolioController::class, 'updateProfile']);
     Route::post('/portfolio/media', [PortfolioController::class, 'uploadMedia']);
+    Route::post('/portfolio/test-upload', [PortfolioController::class, 'testUpload']); // Test endpoint
+    Route::post('/portfolio/test-update', [PortfolioController::class, 'testUpdate']); // Test update endpoint
     Route::put('/portfolio/items/{item}', [PortfolioController::class, 'updateItem']);
     Route::delete('/portfolio/items/{item}', [PortfolioController::class, 'deleteItem']);
     Route::post('/portfolio/reorder', [PortfolioController::class, 'reorderItems']);
