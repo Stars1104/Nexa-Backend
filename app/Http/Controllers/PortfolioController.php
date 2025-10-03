@@ -973,9 +973,30 @@ class PortfolioController extends Controller
                             'id' => $creator->id,
                             'name' => $creator->name,
                             'email' => $creator->email,
-                            'avatar' => $creator->avatar ? asset('storage/' . $creator->avatar) : null,
+                            'avatar' => ($creator->avatar && $creator->avatar !== 'null' && $creator->avatar !== '') ? asset('storage/' . $creator->avatar) : null,
+                            'bio' => $creator->bio,
+                            'creator_type' => $creator->creator_type,
+                            'industry' => $creator->industry,
+                            'niche' => $creator->niche,
+                            'state' => $creator->state,
+                            'gender' => $creator->gender,
+                            'birth_date' => $creator->birth_date,
+                            'age' => $creator->age,
+                            'languages' => $creator->languages ?: ($creator->language ? [$creator->language] : []),
+                            'instagram_handle' => $creator->instagram_handle,
+                            'tiktok_handle' => $creator->tiktok_handle,
+                            'youtube_channel' => $creator->youtube_channel,
+                            'facebook_page' => $creator->facebook_page,
+                            'twitter_handle' => $creator->twitter_handle,
+                            'join_date' => $creator->created_at,
+                            'rating' => $creator->rating ?? 0,
+                            'total_reviews' => $creator->total_reviews ?? 0,
+                            'total_campaigns' => $creator->total_campaigns ?? 0,
+                            'completed_campaigns' => $creator->completed_campaigns ?? 0,
                         ],
-                        'portfolio' => null
+                        'portfolio' => null,
+                        'portfolio_items' => [],
+                        'reviews' => []
                     ]
                 ]);
             }
@@ -987,7 +1008,26 @@ class PortfolioController extends Controller
                         'id' => $creator->id,
                         'name' => $creator->name,
                         'email' => $creator->email,
-                        'avatar' => $creator->avatar ? asset('storage/' . $creator->avatar) : null,
+                        'avatar' => ($creator->avatar && $creator->avatar !== 'null' && $creator->avatar !== '') ? asset('storage/' . $creator->avatar) : null,
+                        'bio' => $creator->bio,
+                        'creator_type' => $creator->creator_type,
+                        'industry' => $creator->industry,
+                        'niche' => $creator->niche,
+                        'state' => $creator->state,
+                        'gender' => $creator->gender,
+                        'birth_date' => $creator->birth_date,
+                        'age' => $creator->age,
+                        'languages' => $creator->languages ?: ($creator->language ? [$creator->language] : []),
+                        'instagram_handle' => $creator->instagram_handle,
+                        'tiktok_handle' => $creator->tiktok_handle,
+                        'youtube_channel' => $creator->youtube_channel,
+                        'facebook_page' => $creator->facebook_page,
+                        'twitter_handle' => $creator->twitter_handle,
+                        'join_date' => $creator->created_at,
+                        'rating' => $creator->rating ?? 0,
+                        'total_reviews' => $creator->total_reviews ?? 0,
+                        'total_campaigns' => $creator->total_campaigns ?? 0,
+                        'completed_campaigns' => $creator->completed_campaigns ?? 0,
                     ],
                     'portfolio' => [
                         'id' => $portfolio->id,
@@ -995,20 +1035,26 @@ class PortfolioController extends Controller
                         'bio' => $portfolio->bio,
                         'profile_picture' => $portfolio->profile_picture ? asset('storage/' . $portfolio->profile_picture) : null,
                         'project_links' => $portfolio->project_links ?? [],
-                        'items' => $portfolio->items->map(function ($item) {
-                            return [
-                                'id' => $item->id,
-                                'title' => $item->title,
-                                'file_path' => $item->file_path,
-                                'file_url' => $item->file_url,
-                                'media_type' => $item->media_type,
-                                'order' => $item->order,
-                                'created_at' => $item->created_at,
-                                'updated_at' => $item->updated_at,
-                            ];
-                        }),
-                        'total_items' => $portfolio->items->count()
-                    ]
+                        'items_count' => $portfolio->items->count(),
+                        'images_count' => $portfolio->items->where('media_type', 'image')->count(),
+                        'videos_count' => $portfolio->items->where('media_type', 'video')->count(),
+                    ],
+                    'portfolio_items' => $portfolio->items->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'title' => $item->title,
+                            'description' => $item->description,
+                            'file_path' => $item->file_path,
+                            'file_url' => $item->file_url,
+                            'thumbnail_url' => $item->thumbnail_url,
+                            'media_type' => $item->media_type,
+                            'file_size' => $item->file_size,
+                            'order' => $item->order,
+                            'created_at' => $item->created_at,
+                            'updated_at' => $item->updated_at,
+                        ];
+                    }),
+                    'reviews' => []
                 ]
             ]);
 
