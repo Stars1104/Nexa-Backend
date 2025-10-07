@@ -55,12 +55,12 @@ class OfferController extends Controller
         //     ], 400);
         // }
 
-        // Check if creator exists and is a creator
+        // Check if creator exists and is a creator or student
         $creator = User::find($request->creator_id);
-        if (!$creator || !$creator->isCreator()) {
+        if (!$creator || (!$creator->isCreator() && !$creator->isStudent())) {
             return response()->json([
                 'success' => false,
-                'message' => 'Invalid creator',
+                'message' => 'Invalid creator or student',
             ], 404);
         }
 
@@ -363,11 +363,11 @@ class OfferController extends Controller
     {
         $user = Auth::user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can accept offers',
+                'message' => 'Only creators and students can accept offers',
             ], 403);
         }
 
@@ -625,11 +625,11 @@ class OfferController extends Controller
 
         $user = Auth::user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can reject offers',
+                'message' => 'Only creators and students can reject offers',
             ], 403);
         }
 
