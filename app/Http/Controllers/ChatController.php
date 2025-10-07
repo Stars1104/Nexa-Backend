@@ -46,15 +46,16 @@ class ChatController extends Controller
                 'room_count' => $chatRooms->count(),
                 'room_ids' => $chatRooms->pluck('room_id')->toArray(),
             ]);
-        } elseif ($user->isCreator()) {
+        } elseif ($user->isCreator() || $user->isStudent()) {
             $chatRooms = ChatRoom::where('creator_id', $user->id)
                 ->with(['brand', 'campaign', 'lastMessage.sender'])
                 ->orderBy('created_at', 'desc') // Newest rooms first
                 ->orderBy('last_message_at', 'desc') // Then by last message
                 ->get();
                 
-            \Log::info('Found chat rooms for creator', [
-                'creator_id' => $user->id,
+            \Log::info('Found chat rooms for creator/student', [
+                'user_id' => $user->id,
+                'user_role' => $user->role,
                 'room_count' => $chatRooms->count(),
                 'room_ids' => $chatRooms->pluck('room_id')->toArray(),
             ]);
@@ -842,7 +843,7 @@ class ChatController extends Controller
     /**
      * Send initial offer automatically when chat opens for the first time
      */
-    private function sendInitialOfferIfNeeded(ChatRoom $chatRoom): void
+    public function sendInitialOfferIfNeeded(ChatRoom $chatRoom): void
     {
         try {
             $campaign = $chatRoom->campaign;

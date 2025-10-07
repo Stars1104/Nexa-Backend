@@ -156,6 +156,48 @@ class CampaignApplicationController extends Controller
 
         $application->approve($user->id);
 
+        // Automatically create chat room when proposal is approved
+        try {
+            $chatRoom = \App\Models\ChatRoom::findOrCreateRoom(
+                $application->campaign_id,
+                $user->id, // brand_id
+                $application->creator_id
+            );
+
+            // Update application workflow status to indicate first contact has been initiated
+            if ($chatRoom->wasRecentlyCreated) {
+                $application->initiateFirstContact();
+                
+                \Log::info('Application workflow status updated to agreement_in_progress', [
+                    'application_id' => $application->id,
+                    'campaign_id' => $application->campaign_id,
+                    'creator_id' => $application->creator_id,
+                    'workflow_status' => $application->workflow_status,
+                ]);
+                
+                // Send initial offer automatically when chat room is created
+                $chatController = new \App\Http\Controllers\ChatController();
+                $chatController->sendInitialOfferIfNeeded($chatRoom);
+            }
+
+            \Log::info('Chat room created automatically for approved proposal', [
+                'application_id' => $application->id,
+                'chat_room_id' => $chatRoom->id,
+                'room_id' => $chatRoom->room_id,
+                'campaign_id' => $application->campaign_id,
+                'brand_id' => $user->id,
+                'creator_id' => $application->creator_id,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to create chat room for approved proposal', [
+                'application_id' => $application->id,
+                'campaign_id' => $application->campaign_id,
+                'brand_id' => $user->id,
+                'creator_id' => $application->creator_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         // Notify creator about proposal approval
         \App\Services\NotificationService::notifyCreatorOfProposalApproval($application);
 
