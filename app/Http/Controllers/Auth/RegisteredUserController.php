@@ -175,7 +175,7 @@ class RegisteredUserController extends Controller
         $isStudent = $request->isStudent ?? false;
         
         // Set free trial only for students (1 month), creators and brands get no free trial
-        $freeTrialExpiresAt = $isStudent ? now()->addMonth() : null;
+        $freeTrialExpiresAt = $isStudent ? now()->addYear() : null;
         
         $user = User::create([
             'name' => trim($request->name),
@@ -224,7 +224,7 @@ class RegisteredUserController extends Controller
                 'bio' => $user->bio,
                 'company_name' => $user->company_name,
                 'student_verified' => $user->student_verified,
-                'student_expires_at' => $user->student_expires_at,
+                'student_expires_at' => $user->free_trial_expires_at,
                 'gender' => $user->gender,
                 'state' => $user->state,
                 'language' => $user->language,
