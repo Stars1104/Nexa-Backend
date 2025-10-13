@@ -33,13 +33,38 @@ class RegisteredUserController extends Controller
             'all_data' => $request->all(),
         ]);
 
+        // Check if email exists in soft-deleted users before validation
+        $softDeletedUser = User::withTrashed()
+            ->where('email', strtolower(trim($request->email)))
+            ->whereNotNull('deleted_at')
+            ->first();
+
+        if ($softDeletedUser) {
+            $daysSinceDeletion = now()->diffInDays($softDeletedUser->deleted_at);
+            if ($daysSinceDeletion <= 30) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Este e-mail está associado a uma conta que foi removida recentemente. Você pode restaurar sua conta em vez de criar uma nova.',
+                    'can_restore' => true,
+                    'removed_at' => $softDeletedUser->deleted_at->toISOString(),
+                    'days_since_deletion' => $daysSinceDeletion,
+                ], 422);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Este e-mail está associado a uma conta que foi removida há mais de 30 dias. Entre em contato com o suporte para mais informações.',
+                    'can_restore' => false,
+                ], 422);
+            }
+        }
+
         $request->validate([
             'name' => [
                 'required', 
                 'string', 
                 'max:255',
                 'min:2',
-                'regex:/^[a-zA-Z0-9\s\-\.\']+$/'
+                'regex:/^[\pL\s\.\'\-]+$/u'
             ],
             'email' => [
                 'required', 

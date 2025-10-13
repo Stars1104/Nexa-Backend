@@ -58,7 +58,9 @@ class WithdrawalMethodSeeder extends Seeder
         ];
 
         foreach ($methods as $method) {
-            DB::table('withdrawal_methods')->insert($method);
+            if (!DB::table('withdrawal_methods')->where('code', 'pagame_bank_transfer')->exists()) {
+    DB::table('withdrawal_methods')->insert($method);
+}
         }
     }
 }

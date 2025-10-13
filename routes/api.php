@@ -32,6 +32,7 @@ use App\Http\Controllers\DeliveryMaterialController;
 use App\Http\Controllers\Admin\BrandRankingController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\StudentController;
+use App\Http\Controllers\AccountController;
 
 // Health check endpoint
 Route::get('/health', function () {
@@ -200,6 +201,17 @@ Route::middleware(['auth:sanctum', 'throttle:notifications'])->group(function ()
     Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
     Route::get('/notifications/statistics', [NotificationController::class, 'statistics']);
     
+});
+
+// Account management routes
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::post('/account/remove', [AccountController::class, 'removeAccount']);
+});
+
+// Public account restoration routes (no authentication required)
+Route::group([],function () {
+    Route::post('/account/restore', [AccountController::class, 'restoreAccount']);
+    Route::post('/account/check-removed', [AccountController::class, 'checkRemovedAccount']);
 });
 
 // Portfolio routes (available to all authenticated creators)

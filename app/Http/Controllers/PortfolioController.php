@@ -101,7 +101,7 @@ class PortfolioController extends Controller
         $imageCount = $items->where('media_type', 'image')->count();
         $videoCount = $items->where('media_type', 'video')->count();
         $totalItems = $items->count();
-
+        dd($item);
         return response()->json([
             'success' => true,
             'data' => [
@@ -139,6 +139,7 @@ class PortfolioController extends Controller
     public function updateProfile(Request $request): JsonResponse
     {
         $user = Auth::user();
+        dd($user);
         
         if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
@@ -551,6 +552,7 @@ class PortfolioController extends Controller
                 'message' => 'Apenas criadores podem fazer upload de mídia'
             ], 403);
         }
+        
 
         try {
             // Get uploaded files
@@ -677,7 +679,6 @@ class PortfolioController extends Controller
 
                 $uploadedItems[] = $item;
             }
-
             return response()->json([
                 'success' => true,
                 'message' => 'Mídia enviada com sucesso',
