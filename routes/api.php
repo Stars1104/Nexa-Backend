@@ -34,6 +34,7 @@ use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\AccountController;
 
+
 // Health check endpoint
 Route::get('/health', function () {
     return response()->json([
@@ -453,3 +454,7 @@ Route::post('/google/auth', [GoogleController::class, 'handleGoogleWithRole'])
     ->name('google.auth');
 
 // Auth routes already included at the top
+
+
+Route::post('/account/checked', [AccountController::class, 'checkAccount']);
+

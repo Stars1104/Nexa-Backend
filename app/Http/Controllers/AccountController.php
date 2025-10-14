@@ -221,4 +221,23 @@ class AccountController extends Controller
             ], 500);
         }
     }
+    /**
+     * Check if email exists in removed accounts
+     */
+
+    public function checkAccount(Request $request): JsonResponse
+    {
+         $request->validate([
+        'email' => 'required|email',
+    ]);
+
+    $exists = \App\Models\User::where('email', $request->email)->exists();
+
+    return response()->json([
+        'exists' => $exists,
+        'message' => $exists 
+            ? 'Email already exists.' 
+            : 'You must regist.',
+    ]);
+    }
 }
