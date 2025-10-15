@@ -418,7 +418,11 @@ class ChatController extends Controller
             $fileName = time() . '_' . $file->getClientOriginalName();
             $filePath = $file->storeAs('chat-files', $fileName, 'public');
             
-            $messageData['message'] = $file->getClientOriginalName();
+            // If no text message provided, use filename as message
+            if (empty($messageData['message'])) {
+                $messageData['message'] = $file->getClientOriginalName();
+            }
+            
             $messageData['message_type'] = $this->getFileType($file->getMimeType());
             $messageData['file_path'] = $filePath;
             $messageData['file_name'] = $file->getClientOriginalName();

@@ -54,9 +54,20 @@ class LoginRequest extends FormRequest
         // Check if user is soft deleted (removed)
         if ($user->trashed()) {
             RateLimiter::hit($this->throttleKey());
-            throw ValidationException::withMessages([
-                'email' => 'Sua conta foi removida da plataforma. Entre em contato com o suporte para mais informações.',
-            ]);
+            
+            // Check if account can be restored (within 30 days)
+            $daysSinceDeletion = now()->diffInDays($user->deleted_at);
+            if ($daysSinceDeletion <= 30) {
+                throw ValidationException::withMessages([
+                    'email' => 'account_removed_restorable',
+                    'removed_at' => $user->deleted_at->toISOString(),
+                    'days_since_deletion' => $daysSinceDeletion,
+                ]);
+            } else {
+                throw ValidationException::withMessages([
+                    'email' => 'Sua conta foi removida há mais de 30 dias e não pode ser restaurada automaticamente. Entre em contato com o suporte.',
+                ]);
+            }
         }
 
         // Check if user is blocked (not email verified)
