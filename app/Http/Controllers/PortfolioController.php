@@ -4,30 +4,40 @@ namespace App\Http\Controllers;
 
 use App\Models\Portfolio;
 use App\Models\PortfolioItem;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
-use App\Models\User; // Added this import for the new method
 
 class PortfolioController extends Controller
 {
-    const MAX_FILES_PER_UPLOAD = 5;
-    const MAX_TOTAL_FILES = 12;
-    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
     const ACCEPTED_TYPES = [
         'image/jpeg',
         'image/png',
         'image/jpg',
         'video/mp4',
         'video/quicktime',
-        'video/mov'
+        'video/mov',
+        'video/avi',
+        'video/mpeg',
+        'video/x-msvideo',
+        'video/webm',
+        'video/ogg',
+        'video/x-matroska',
+        'video/x-flv',
+        'video/3gpp',
+        'video/x-ms-wmv',
+        'application/octet-stream' // Fallback for files where MIME type detection fails
     ];
+    
+    const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
+    const MAX_TOTAL_FILES = 20;
 
     /**
-     * Get user's portfolio
+     * Get portfolio data
      */
     public function show(): JsonResponse
     {
@@ -50,14 +60,14 @@ class PortfolioController extends Controller
                         'title' => null,
                         'bio' => null,
                         'profile_picture' => null,
-                        'created_at' => null,
-                        'updated_at' => null,
-                        'items' => []
+                        'project_links' => [],
+                        'items' => [],
                     ],
                     'items_count' => 0,
                     'images_count' => 0,
                     'videos_count' => 0,
                     'is_complete' => false,
+                    'total_items' => 0
                 ]
             ]);
         }
@@ -67,32 +77,69 @@ class PortfolioController extends Controller
         }])->first();
 
         if (!$portfolio) {
-            // Create empty portfolio if it doesn't exist
-            $portfolio = $user->portfolio()->create([
-                'title' => null,
-                'bio' => null,
-                'profile_picture' => null,
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'portfolio' => [
+                        'id' => null,
+                        'title' => null,
+                        'bio' => null,
+                        'profile_picture' => null,
+                        'project_links' => [],
+                        'items' => [],
+                    ],
+                    'items_count' => 0,
+                    'images_count' => 0,
+                    'videos_count' => 0,
+                    'is_complete' => false,
+                    'total_items' => 0
+                ]
             ]);
         }
 
+        $items = $portfolio->items;
+        $imageCount = $items->where('media_type', 'image')->count();
+        $videoCount = $items->where('media_type', 'video')->count();
+        $totalItems = $items->count();
+        dd($item);
         return response()->json([
             'success' => true,
             'data' => [
-                'portfolio' => $portfolio,
-                'items_count' => $portfolio->getItemsCount(),
-                'images_count' => $portfolio->getImagesCount(),
-                'videos_count' => $portfolio->getVideosCount(),
-                'is_complete' => $portfolio->isComplete(),
+                'portfolio' => [
+                    'id' => $portfolio->id,
+                    'title' => $portfolio->title,
+                    'bio' => $portfolio->bio,
+                    'profile_picture' => $portfolio->profile_picture ? asset('storage/' . $portfolio->profile_picture) : null,
+                    'project_links' => $portfolio->project_links ?? [],
+                    'items' => $items->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'title' => $item->title,
+                            'file_path' => $item->file_path,
+                            'file_url' => $item->file_url,
+                            'media_type' => $item->media_type,
+                            'order' => $item->order,
+                            'created_at' => $item->created_at,
+                            'updated_at' => $item->updated_at,
+                        ];
+                    }),
+                ],
+                'items_count' => $totalItems,
+                'images_count' => $imageCount,
+                'videos_count' => $videoCount,
+                'is_complete' => !empty($portfolio->title) && !empty($portfolio->bio) && $totalItems >= 3,
+                'total_items' => $totalItems
             ]
         ]);
     }
 
     /**
-     * Update portfolio profile information
+     * Update portfolio profile
      */
     public function updateProfile(Request $request): JsonResponse
     {
         $user = Auth::user();
+        dd($user);
         
         if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
@@ -109,46 +156,63 @@ class PortfolioController extends Controller
             ]);
         }
 
-        // Log the request data for debugging
-        Log::info('Portfolio update request', [
+        // Log all incoming data for debugging
+        Log::info('Portfolio update request received', [
+            'user_id' => $user->id,
             'all_data' => $request->all(),
-            'title' => $request->input('title'),
-            'bio' => $request->input('bio'),
-            'has_file' => $request->hasFile('profile_picture'),
+            'has_title' => $request->has('title'),
+            'has_bio' => $request->has('bio'),
+            'has_profile_picture' => $request->hasFile('profile_picture'),
+            'has_project_links' => $request->has('project_links'),
+            'title_value' => $request->input('title'),
+            'bio_value' => $request->input('bio'),
             'content_type' => $request->header('Content-Type'),
+            'method' => $request->method(),
         ]);
 
         $validator = Validator::make($request->all(), [
             'title' => 'nullable|string|max:255',
             'bio' => 'nullable|string|max:500',
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg|max:5120', // 5MB
-            'project_links' => 'nullable|json',
+            'project_links' => 'nullable|string',
         ]);
 
-        // Custom validation for project links after JSON decode
-        if ($request->has('project_links')) {
+        // Custom validation for project_links
+        if ($request->has('project_links') && !empty($request->input('project_links'))) {
             $projectLinks = $request->input('project_links');
+            
+            // Try to decode JSON
             if (is_string($projectLinks)) {
-                $projectLinks = json_decode($projectLinks, true);
+                $decoded = json_decode($projectLinks, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => ['project_links' => ['Formato JSON inválido para project_links']]
+                    ], 422);
+                }
             }
+            
             if (is_array($projectLinks)) {
-                foreach ($projectLinks as $link) {
+                foreach ($projectLinks as $index => $link) {
                     if (is_array($link)) {
-                        // New object structure with title and url
-                        if (!empty(trim($link['url'] ?? '')) && !filter_var($link['url'], FILTER_VALIDATE_URL)) {
+                        // New object structure
+                        $url = trim($link['url'] ?? '');
+                        if (!empty($url) && !filter_var($url, FILTER_VALIDATE_URL)) {
                             return response()->json([
                                 'success' => false,
                                 'message' => 'Validation failed',
-                                'errors' => ['project_links' => ['Um ou mais links são inválidos']]
+                                'errors' => ['project_links' => ["Link no índice {$index} é inválido: {$url}"]]
                             ], 422);
                         }
                     } else {
                         // Legacy string structure
-                        if (!empty(trim($link)) && !filter_var($link, FILTER_VALIDATE_URL)) {
+                        $url = trim($link);
+                        if (!empty($url) && !filter_var($url, FILTER_VALIDATE_URL)) {
                             return response()->json([
                                 'success' => false,
                                 'message' => 'Validation failed',
-                                'errors' => ['project_links' => ['Um ou mais links são inválidos']]
+                                'errors' => ['project_links' => ["Link no índice {$index} é inválido: {$url}"]]
                             ], 422);
                         }
                     }
@@ -157,7 +221,12 @@ class PortfolioController extends Controller
         }
 
         if ($validator->fails()) {
-            Log::error('Portfolio validation failed', $validator->errors()->toArray());
+            Log::error('Portfolio update validation failed', [
+                'user_id' => $user->id,
+                'errors' => $validator->errors()->toArray(),
+                'input_data' => $request->all()
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
@@ -166,11 +235,78 @@ class PortfolioController extends Controller
         }
 
         try {
+            // CRITICAL DEBUG: Check user authentication and portfolio ownership
+            Log::info('CRITICAL DEBUG - User and Portfolio Check', [
+                'authenticated_user_id' => $user->id,
+                'authenticated_user_email' => $user->email,
+                'authenticated_user_name' => $user->name,
+                'user_role' => $user->role,
+            ]);
+            
+            // Check if user already has a portfolio
+            $existingPortfolio = $user->portfolio;
+            if ($existingPortfolio) {
+                Log::info('CRITICAL DEBUG - Existing Portfolio Found', [
+                    'portfolio_id' => $existingPortfolio->id,
+                    'portfolio_user_id' => $existingPortfolio->user_id,
+                    'current_title' => $existingPortfolio->title,
+                    'current_bio' => $existingPortfolio->bio,
+                    'portfolio_created_at' => $existingPortfolio->created_at,
+                    'portfolio_updated_at' => $existingPortfolio->updated_at,
+                ]);
+            } else {
+                Log::info('CRITICAL DEBUG - No existing portfolio found, will create new one');
+            }
+            
             $portfolio = $user->portfolio()->firstOrCreate();
+            
+            // CRITICAL DEBUG: Verify portfolio ownership after creation/retrieval
+            Log::info('CRITICAL DEBUG - Portfolio After firstOrCreate', [
+                'portfolio_id' => $portfolio->id,
+                'portfolio_user_id' => $portfolio->user_id,
+                'authenticated_user_id' => $user->id,
+                'ownership_match' => $portfolio->user_id === $user->id,
+                'current_title' => $portfolio->title,
+                'current_bio' => $portfolio->bio,
+            ]);
+            
+            // Get raw input data
+            $rawTitle = $request->input('title');
+            $rawBio = $request->input('bio');
 
-            $data = $request->only(['title', 'bio', 'project_links']);
+            Log::info('Raw input data', [
+                'user_id' => $user->id,
+                'raw_title' => $rawTitle,
+                'raw_bio' => $rawBio,
+                'title_type' => gettype($rawTitle),
+                'bio_type' => gettype($rawBio),
+            ]);
 
-            // Handle project links - decode JSON and filter empty values
+            // Use the raw input data directly instead of request->only()
+            $data = [];
+
+            // Always update fields that are present in the request, even if empty
+            // This allows users to clear their title/bio by sending empty strings
+            if ($request->has('title')) {
+                $data['title'] = $rawTitle ?: null; // Convert empty string to null
+            }
+            if ($request->has('bio')) {
+                $data['bio'] = $rawBio ?: null; // Convert empty string to null
+            }
+            
+            Log::info('Updating portfolio profile', [
+                'user_id' => $user->id,
+                'portfolio_id' => $portfolio->id,
+                'raw_title' => $rawTitle,
+                'raw_bio' => $rawBio,
+                'data_title' => $data['title'] ?? 'null',
+                'data_bio' => $data['bio'] ?? 'null',
+                'has_profile_picture' => $request->hasFile('profile_picture'),
+                'has_project_links' => $request->has('project_links'),
+                'all_request_data' => $request->all()
+            ]);
+
+            // Handle project_links
             if ($request->has('project_links')) {
                 $projectLinks = $request->input('project_links');
                 if (is_string($projectLinks)) {
@@ -180,8 +316,8 @@ class PortfolioController extends Controller
                     $validLinks = [];
                     foreach ($projectLinks as $link) {
                         if (is_array($link)) {
-                            // New object structure with title and url
-                            if (!empty(trim($link['url'] ?? '')) && !empty(trim($link['title'] ?? ''))) {
+                            // New object structure
+                            if (!empty(trim($link['title'] ?? '')) && !empty(trim($link['url'] ?? ''))) {
                                 $validLinks[] = [
                                     'title' => trim($link['title']),
                                     'url' => trim($link['url'])
@@ -191,7 +327,7 @@ class PortfolioController extends Controller
                             // Legacy string structure - convert to object
                             if (!empty(trim($link))) {
                                 $validLinks[] = [
-                                    'title' => 'Projeto ' . (count($validLinks) + 1),
+                                    'title' => 'Link',
                                     'url' => trim($link)
                                 ];
                             }
@@ -201,46 +337,129 @@ class PortfolioController extends Controller
                 } else {
                     $data['project_links'] = null;
                 }
+            } else {
+                // If no project_links sent, don't update it (preserve existing)
+                // Only set to null if explicitly sent as empty
             }
 
             // Handle profile picture upload
             if ($request->hasFile('profile_picture')) {
-                // Delete old profile picture if exists
+                // Delete old profile picture
                 if ($portfolio->profile_picture) {
                     Storage::disk('public')->delete($portfolio->profile_picture);
                 }
 
                 $file = $request->file('profile_picture');
-                $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-                $filePath = $file->storeAs('portfolios/profile-pictures', $fileName, 'public');
+                $filePath = $file->store('portfolio/' . $user->id, 'public');
                 
                 $data['profile_picture'] = $filePath;
             }
 
-            Log::info('Updating portfolio with data', $data);
-
-            $portfolio->update($data);
-
-            // Notify admin of portfolio update
-            \App\Services\NotificationService::notifyAdminOfPortfolioUpdate($user, 'profile_update', [
+            Log::info('About to update portfolio with data', [
+                'user_id' => $user->id,
                 'portfolio_id' => $portfolio->id,
-                'title' => $data['title'] ?? null,
-                'bio' => $data['bio'] ?? null,
-                'has_profile_picture' => isset($data['profile_picture']),
+                'data_to_update' => $data,
+                'current_title' => $portfolio->title,
+                'current_bio' => $portfolio->bio
             ]);
-
-            $updatedPortfolio = $portfolio->fresh();
-            Log::info('Portfolio updated successfully', [
-                'portfolio_id' => $updatedPortfolio->id,
-                'title' => $updatedPortfolio->title,
-                'bio' => $updatedPortfolio->bio,
-                'profile_picture' => $updatedPortfolio->profile_picture,
+            
+            // CRITICAL SAFETY CHECK: Ensure portfolio belongs to authenticated user
+            if ($portfolio->user_id !== $user->id) {
+                Log::error('CRITICAL SECURITY ISSUE - Portfolio ownership mismatch', [
+                    'portfolio_user_id' => $portfolio->user_id,
+                    'authenticated_user_id' => $user->id,
+                    'portfolio_id' => $portfolio->id,
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Security error: Portfolio ownership mismatch'
+                ], 403);
+            }
+            
+            // Only update if there's data to update
+            if (!empty($data)) {
+                Log::info('CRITICAL DEBUG - About to update portfolio', [
+                    'portfolio_id' => $portfolio->id,
+                    'portfolio_user_id' => $portfolio->user_id,
+                    'data_to_update' => $data,
+                    'before_title' => $portfolio->title,
+                    'before_bio' => $portfolio->bio,
+                ]);
+                
+                $updateResult = $portfolio->update($data);
+                
+                Log::info('CRITICAL DEBUG - Portfolio update completed', [
+                    'update_result' => $updateResult,
+                    'portfolio_id' => $portfolio->id,
+                ]);
+            } else {
+                Log::warning('No data to update', [
+                    'user_id' => $user->id,
+                    'portfolio_id' => $portfolio->id,
+                    'raw_title' => $rawTitle,
+                    'raw_bio' => $rawBio
+                ]);
+                $updateResult = true; // No update needed
+            }
+            
+            Log::info('Portfolio update result', [
+                'user_id' => $user->id,
+                'portfolio_id' => $portfolio->id,
+                'update_result' => $updateResult
+            ]);
+            
+            // Refresh the portfolio to get updated data
+            $portfolio->refresh();
+            
+            // CRITICAL VERIFICATION: Check if data was actually saved
+            Log::info('CRITICAL VERIFICATION - Portfolio data after update', [
+                'user_id' => $user->id,
+                'portfolio_id' => $portfolio->id,
+                'portfolio_user_id' => $portfolio->user_id,
+                'saved_title' => $portfolio->title,
+                'saved_bio' => $portfolio->bio,
+                'expected_title' => $rawTitle,
+                'expected_bio' => $rawBio,
+                'title_match' => $portfolio->title === $rawTitle,
+                'bio_match' => $portfolio->bio === $rawBio,
+                'saved_project_links' => $portfolio->project_links,
+                'updated_at' => $portfolio->updated_at,
+            ]);
+            
+            // If data doesn't match, this is a critical bug
+            if ($portfolio->title !== $rawTitle || $portfolio->bio !== $rawBio) {
+                Log::error('CRITICAL BUG - Data mismatch after update', [
+                    'expected_title' => $rawTitle,
+                    'actual_title' => $portfolio->title,
+                    'expected_bio' => $rawBio,
+                    'actual_bio' => $portfolio->bio,
+                    'portfolio_id' => $portfolio->id,
+                    'user_id' => $user->id,
+                ]);
+            }
+            
+            Log::info('Portfolio profile updated successfully', [
+                'user_id' => $user->id,
+                'portfolio_id' => $portfolio->id,
+                'saved_title' => $portfolio->title,
+                'saved_bio' => $portfolio->bio,
+                'saved_project_links' => $portfolio->project_links
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Portfolio profile updated successfully',
-                'data' => $updatedPortfolio
+                'message' => 'Portfolio updated successfully',
+                'data' => [
+                    'id' => $portfolio->id,
+                    'title' => $portfolio->title,
+                    'bio' => $portfolio->bio,
+                    'profile_picture' => $portfolio->profile_picture ? asset('storage/' . $portfolio->profile_picture) : null,
+                    'profile_picture_url' => $portfolio->profile_picture ? asset('storage/' . $portfolio->profile_picture) : null,
+                    'project_links' => $portfolio->project_links ?? [],
+                    'created_at' => $portfolio->created_at,
+                    'updated_at' => $portfolio->updated_at,
+                ]
             ]);
 
         } catch (\Exception $e) {
@@ -253,6 +472,74 @@ class PortfolioController extends Controller
     }
 
     /**
+     * Test endpoint for debugging portfolio updates
+     */
+    public function testUpdate(Request $request): JsonResponse
+    {
+        $user = Auth::user();
+        
+        // Get all possible ways to access the data
+        $allData = $request->all();
+        $titleInput = $request->input('title');
+        $bioInput = $request->input('bio');
+        $titleGet = $request->get('title');
+        $bioGet = $request->get('bio');
+        
+        Log::info('Test portfolio update endpoint called', [
+            'user_id' => $user->id,
+            'all_data' => $allData,
+            'method' => $request->method(),
+            'content_type' => $request->header('Content-Type'),
+            'has_title' => $request->has('title'),
+            'has_bio' => $request->has('bio'),
+            'title_input' => $titleInput,
+            'bio_input' => $bioInput,
+            'title_get' => $titleGet,
+            'bio_get' => $bioGet,
+            'request_keys' => array_keys($allData),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Test update successful',
+            'data' => [
+                'received_data' => $allData,
+                'user_id' => $user->id,
+                'has_title' => $request->has('title'),
+                'has_bio' => $request->has('bio'),
+                'title_input' => $titleInput,
+                'bio_input' => $bioInput,
+                'title_get' => $titleGet,
+                'bio_get' => $bioGet,
+                'request_keys' => array_keys($allData),
+            ]
+        ]);
+    }
+
+    /**
+     * Test endpoint for debugging file uploads
+     */
+    public function testUpload(Request $request): JsonResponse
+    {
+        Log::info('Test upload request', [
+            'all_data' => $request->all(),
+            'files' => $request->file('files'),
+            'has_files' => $request->hasFile('files'),
+            'content_type' => $request->header('Content-Type'),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Test successful',
+            'data' => [
+                'files_count' => count($request->file('files', [])),
+                'has_files' => $request->hasFile('files'),
+                'content_type' => $request->header('Content-Type'),
+            ]
+        ]);
+    }
+
+    /**
      * Upload portfolio media files
      */
     public function uploadMedia(Request $request): JsonResponse
@@ -262,94 +549,167 @@ class PortfolioController extends Controller
         if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators and students can upload portfolio media'
+                'message' => 'Apenas criadores podem fazer upload de mídia'
             ], 403);
         }
-
-        // Students can't upload portfolio media, return success with no changes
-        if ($user->isStudent()) {
-            return response()->json([
-                'success' => true,
-                'message' => 'Students cannot upload portfolio media'
-            ]);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'files.*' => 'required|file|mimes:jpeg,png,jpg,mp4,mov,quicktime|max:51200', // 50MB
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
+        
 
         try {
-            $portfolio = $user->portfolio()->firstOrCreate();
-            
-            // Check total files limit
-            $currentCount = $portfolio->items()->count();
+            // Get uploaded files
             $uploadedFiles = $request->file('files', []);
-            
-            if ($currentCount + count($uploadedFiles) > self::MAX_TOTAL_FILES) {
+
+            Log::info('Upload media request', [
+                'user_id' => $user->id,
+                'files_count' => count($uploadedFiles),
+                'files' => array_map(function ($file) {
+                    return $file ? [
+                        'name' => $file->getClientOriginalName(),
+                        'size' => $file->getSize(),
+                        'mime' => $file->getMimeType(),
+                        'is_valid' => $file->isValid()
+                    ] : null;
+                }, $uploadedFiles)
+            ]);
+
+            // Basic validation
+            if (empty($uploadedFiles)) {
+                Log::warning('No files uploaded', ['user_id' => $user->id]);
                 return response()->json([
                     'success' => false,
-                    'message' => 'Maximum ' . self::MAX_TOTAL_FILES . ' files allowed in portfolio'
+                    'message' => 'Nenhum arquivo foi enviado',
+                    'errors' => ['files' => ['Nenhum arquivo foi enviado']]
                 ], 422);
             }
 
+            if (count($uploadedFiles) > 5) {
+                Log::warning('Too many files uploaded', ['user_id' => $user->id, 'count' => count($uploadedFiles)]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Máximo de 5 arquivos por upload',
+                    'errors' => ['files' => ['Máximo de 5 arquivos por upload']]
+                ], 422);
+            }
+
+            $portfolio = $user->portfolio()->firstOrCreate();
             $uploadedItems = [];
 
-            foreach ($uploadedFiles as $file) {
-                $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-                $filePath = $file->storeAs('portfolios/media', $fileName, 'public');
-                
-                $mimeType = $file->getMimeType();
-                $mediaType = $this->getMediaType($mimeType);
-                
-                Log::info('Processing uploaded file', [
-                    'original_name' => $file->getClientOriginalName(),
-                    'mime_type' => $mimeType,
-                    'detected_media_type' => $mediaType,
-                    'file_size' => $file->getSize(),
+            foreach ($uploadedFiles as $index => $file) {
+                Log::info('Validating file', [
+                    'user_id' => $user->id,
+                    'index' => $index,
+                    'file_exists' => !is_null($file),
+                    'is_valid' => $file ? $file->isValid() : false,
+                    'mime_type' => $file ? $file->getMimeType() : null,
+                    'file_size' => $file ? $file->getSize() : null,
+                    'max_size' => self::MAX_FILE_SIZE
                 ]);
+
+                if (!$file || !$file->isValid()) {
+                    Log::error('File validation failed: invalid file', [
+                        'user_id' => $user->id,
+                        'index' => $index,
+                        'file' => $file
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Arquivo inválido',
+                        'errors' => ['files.' . $index => ['Arquivo inválido']]
+                    ], 422);
+                }
+
+                // Check file type
+                $mimeType = $file->getMimeType();
+                if (!in_array($mimeType, self::ACCEPTED_TYPES)) {
+                    Log::error('File validation failed: unsupported MIME type', [
+                        'user_id' => $user->id,
+                        'index' => $index,
+                        'mime_type' => $mimeType,
+                        'accepted_types' => self::ACCEPTED_TYPES
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Tipo de arquivo não suportado',
+                        'errors' => ['files.' . $index => ['Tipo de arquivo não suportado: ' . $mimeType]]
+                    ], 422);
+                }
+
+                // Check file size
+                if ($file->getSize() > self::MAX_FILE_SIZE) {
+                    Log::error('File validation failed: file too large', [
+                        'user_id' => $user->id,
+                        'index' => $index,
+                        'file_size' => $file->getSize(),
+                        'max_size' => self::MAX_FILE_SIZE
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Arquivo muito grande',
+                        'errors' => ['files.' . $index => ['Arquivo muito grande. Máximo: ' . (self::MAX_FILE_SIZE / 1024 / 1024) . 'MB']]
+                    ], 422);
+                }
+
+                // Determine media type
+                if (str_starts_with($mimeType, 'image/')) {
+                    $mediaType = 'image';
+                } elseif (str_starts_with($mimeType, 'video/')) {
+                    $mediaType = 'video';
+                } else {
+                    // For files with misdetected MIME types, try to determine from file extension
+                    $extension = strtolower(pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION));
+                    $videoExtensions = ['mp4', 'mov', 'avi', 'mpeg', 'mpg', 'wmv', 'webm', 'ogg', 'mkv', 'flv', '3gp'];
+                    $mediaType = in_array($extension, $videoExtensions) ? 'video' : 'image';
+                }
                 
+                // Generate unique filename
+                $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                
+                // Store file
+                $storedPath = $file->storeAs('portfolio/' . $user->id, $filename, 'public');
+                
+                // Create portfolio item
                 $item = $portfolio->items()->create([
-                    'file_path' => $filePath,
+                    'file_path' => $storedPath,
                     'file_name' => $file->getClientOriginalName(),
                     'file_type' => $mimeType,
                     'media_type' => $mediaType,
                     'file_size' => $file->getSize(),
-                    'order' => $portfolio->items()->max('order') + 1,
+                    'title' => pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME),
+                    'order' => $portfolio->items()->count()
                 ]);
 
                 $uploadedItems[] = $item;
             }
-
-            // Notify admin of portfolio media upload
-            \App\Services\NotificationService::notifyAdminOfPortfolioUpdate($user, 'media_upload', [
-                'portfolio_id' => $portfolio->id,
-                'uploaded_count' => count($uploadedItems),
-                'total_items' => $portfolio->items()->count(),
-                'uploaded_items' => $uploadedItems,
-            ]);
-
             return response()->json([
                 'success' => true,
-                'message' => 'Media uploaded successfully',
+                'message' => 'Mídia enviada com sucesso',
                 'data' => [
-                    'items' => $uploadedItems,
-                    'total_items' => $portfolio->items()->count(),
+                    'items' => collect($uploadedItems)->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'title' => $item->title,
+                            'file_path' => $item->file_path,
+                            'file_url' => $item->file_url,
+                            'media_type' => $item->media_type,
+                            'order' => $item->order,
+                            'created_at' => $item->created_at,
+                            'updated_at' => $item->updated_at,
+                        ];
+                    }),
+                    'total_items' => $portfolio->items()->count()
                 ]
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Failed to upload portfolio media: ' . $e->getMessage());
+            Log::error('Failed to upload portfolio media', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to upload media'
+                'message' => 'Erro interno do servidor',
+                'error' => $e->getMessage()
             ], 500);
         }
     }
@@ -385,9 +745,7 @@ class PortfolioController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'title' => 'nullable|string|max:255',
-            'description' => 'nullable|string|max:1000',
-            'order' => 'nullable|integer|min:0',
+            'title' => 'required|string|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -399,12 +757,11 @@ class PortfolioController extends Controller
         }
 
         try {
-            $item->update($request->only(['title', 'description', 'order']));
+            $item->update($request->only(['title']));
 
             return response()->json([
                 'success' => true,
-                'message' => 'Portfolio item updated successfully',
-                'data' => $item->fresh()
+                'message' => 'Portfolio item updated successfully'
             ]);
 
         } catch (\Exception $e) {
@@ -448,9 +805,10 @@ class PortfolioController extends Controller
 
         try {
             // Delete file from storage
-            Storage::disk('public')->delete($item->file_path);
-            
-            // Delete item from database
+            if ($item->file_path) {
+                Storage::disk('public')->delete($item->file_path);
+            }
+
             $item->delete();
 
             return response()->json([
@@ -491,7 +849,7 @@ class PortfolioController extends Controller
 
         $validator = Validator::make($request->all(), [
             'item_orders' => 'required|array',
-            'item_orders.*.id' => 'required|exists:portfolio_items,id',
+            'item_orders.*.id' => 'required|integer',
             'item_orders.*.order' => 'required|integer|min:0',
         ]);
 
@@ -504,8 +862,7 @@ class PortfolioController extends Controller
         }
 
         try {
-            $portfolio = $user->portfolio()->first();
-            
+            $portfolio = $user->portfolio;
             if (!$portfolio) {
                 return response()->json([
                     'success' => false,
@@ -554,11 +911,9 @@ class PortfolioController extends Controller
                 'success' => true,
                 'data' => [
                     'total_items' => 0,
-                    'images_count' => 0,
-                    'videos_count' => 0,
-                    'is_complete' => false,
-                    'has_minimum_items' => false,
-                    'profile_complete' => false,
+                    'image_count' => 0,
+                    'video_count' => 0,
+                    'last_updated' => null
                 ]
             ]);
         }
@@ -575,12 +930,10 @@ class PortfolioController extends Controller
         return response()->json([
             'success' => true,
             'data' => [
-                'total_items' => $portfolio->getItemsCount(),
-                'images_count' => $portfolio->getImagesCount(),
-                'videos_count' => $portfolio->getVideosCount(),
-                'is_complete' => $portfolio->isComplete(),
-                'has_minimum_items' => $portfolio->hasMinimumItems(),
-                'profile_complete' => !empty($portfolio->title) && !empty($portfolio->bio),
+                'total_items' => $portfolio->items->count(),
+                'image_count' => $portfolio->items->where('media_type', 'image')->count(),
+                'video_count' => $portfolio->items->where('media_type', 'video')->count(),
+                'last_updated' => $portfolio->updated_at
             ]
         ]);
     }
@@ -588,11 +941,11 @@ class PortfolioController extends Controller
     /**
      * Get creator profile for brands (public view)
      */
-    public function getCreatorProfile(Request $request, $creatorId): JsonResponse
+    public function getCreatorProfile($creatorId): JsonResponse
     {
         try {
-            $user = auth()->user();
-            
+            // Check if user is authenticated
+            $user = Auth::user();
             if (!$user) {
                 return response()->json([
                     'success' => false,
@@ -601,97 +954,109 @@ class PortfolioController extends Controller
             }
 
             // Find the creator or student
-            $creator = User::where('id', $creatorId)
-                ->whereIn('role', ['creator', 'student'])
-                ->with(['portfolio.items', 'receivedReviews.contract.brand'])
-                ->first();
-
-            if (!$creator) {
+            $creator = User::find($creatorId);
+            if (!$creator || (!$creator->isCreator() && !$creator->isStudent())) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Creator not found'
                 ], 404);
             }
 
-            // Get portfolio data
-            $portfolio = $creator->portfolio;
-            
-            // Get reviews
-            $reviews = $creator->receivedReviews()
-                ->with('contract.brand:id,name')
-                ->orderBy('created_at', 'desc')
-                ->get();
+            $portfolio = $creator->portfolio()->with(['items' => function ($query) {
+                $query->orderBy('order');
+            }])->first();
 
-            // Calculate average rating
-            $averageRating = $reviews->avg('rating') ?? 0;
-            $totalReviews = $reviews->count();
-
-            // Get portfolio items
-            $portfolioItems = $portfolio ? $portfolio->items()->orderBy('order')->get() : collect();
-
-            // Prepare response data (only public information)
-            $responseData = [
-                'creator' => [
-                    'id' => $creator->id,
-                    'name' => $creator->name,
-                    'avatar' => $creator->avatar,
-                    'bio' => $creator->bio,
-                    'state' => $creator->state,
-                    'join_date' => $creator->created_at,
-                    'rating' => round($averageRating, 1),
-                    'total_reviews' => $totalReviews,
-                    'total_campaigns' => $creator->bids()->count(),
-                    'completed_campaigns' => $creator->bids()->where('status', 'completed')->count(),
-                    // Enhanced creator information
-                    'birth_date' => $creator->birth_date,
-                    'age' => $creator->birth_date ? now()->diffInYears($creator->birth_date) : null,
-                    'gender' => $creator->gender,
-                    'creator_type' => $creator->creator_type,
-                    'industry' => $creator->industry,
-                    'language' => $creator->language,
-                    'languages' => $creator->languages ?: ($creator->language ? [$creator->language] : []),
-                    // Social media handles
-                    'instagram_handle' => $creator->instagram_handle,
-                    'tiktok_handle' => $creator->tiktok_handle,
-                    'youtube_channel' => $creator->youtube_channel,
-                    'facebook_page' => $creator->facebook_page,
-                    'twitter_handle' => $creator->twitter_handle,
-                ],
-                'portfolio' => $portfolio ? [
-                    'title' => $portfolio->title,
-                    'bio' => $portfolio->bio,
-                    'profile_picture' => $portfolio->profile_picture_url,
-                    'project_links' => $portfolio->project_links,
-                    'items_count' => $portfolio->getItemsCount(),
-                    'images_count' => $portfolio->getImagesCount(),
-                    'videos_count' => $portfolio->getVideosCount(),
-                ] : null,
-                'portfolio_items' => $portfolioItems->map(function ($item) {
-                    return [
-                        'id' => $item->id,
-                        'title' => $item->title,
-                        'description' => $item->description,
-                        'file_url' => $item->file_url,
-                        'thumbnail_url' => $item->thumbnail_url,
-                        'media_type' => $item->media_type,
-                        'file_size' => $item->formatted_file_size,
-                        'order' => $item->order,
-                    ];
-                }),
-                'reviews' => $reviews->map(function ($review) {
-                    return [
-                        'id' => $review->id,
-                        'brand_name' => $review->contract && $review->contract->brand ? $review->contract->brand->name : 'Unknown Brand',
-                        'rating' => $review->rating,
-                        'comment' => $review->comment,
-                        'created_at' => $review->created_at,
-                    ];
-                }),
-            ];
+            if (!$portfolio) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'creator' => [
+                            'id' => $creator->id,
+                            'name' => $creator->name,
+                            'email' => $creator->email,
+                            'avatar' => ($creator->avatar && $creator->avatar !== 'null' && $creator->avatar !== '') ? asset('storage/' . $creator->avatar) : null,
+                            'bio' => $creator->bio,
+                            'creator_type' => $creator->creator_type,
+                            'industry' => $creator->industry,
+                            'niche' => $creator->niche,
+                            'state' => $creator->state,
+                            'gender' => $creator->gender,
+                            'birth_date' => $creator->birth_date,
+                            'age' => $creator->age,
+                            'languages' => $creator->languages ?: ($creator->language ? [$creator->language] : []),
+                            'instagram_handle' => $creator->instagram_handle,
+                            'tiktok_handle' => $creator->tiktok_handle,
+                            'youtube_channel' => $creator->youtube_channel,
+                            'facebook_page' => $creator->facebook_page,
+                            'twitter_handle' => $creator->twitter_handle,
+                            'join_date' => $creator->created_at,
+                            'rating' => $creator->rating ?? 0,
+                            'total_reviews' => $creator->total_reviews ?? 0,
+                            'total_campaigns' => $creator->total_campaigns ?? 0,
+                            'completed_campaigns' => $creator->completed_campaigns ?? 0,
+                        ],
+                        'portfolio' => null,
+                        'portfolio_items' => [],
+                        'reviews' => []
+                    ]
+                ]);
+            }
 
             return response()->json([
                 'success' => true,
-                'data' => $responseData
+                'data' => [
+                    'creator' => [
+                        'id' => $creator->id,
+                        'name' => $creator->name,
+                        'email' => $creator->email,
+                        'avatar' => ($creator->avatar && $creator->avatar !== 'null' && $creator->avatar !== '') ? asset('storage/' . $creator->avatar) : null,
+                        'bio' => $creator->bio,
+                        'creator_type' => $creator->creator_type,
+                        'industry' => $creator->industry,
+                        'niche' => $creator->niche,
+                        'state' => $creator->state,
+                        'gender' => $creator->gender,
+                        'birth_date' => $creator->birth_date,
+                        'age' => $creator->age,
+                        'languages' => $creator->languages ?: ($creator->language ? [$creator->language] : []),
+                        'instagram_handle' => $creator->instagram_handle,
+                        'tiktok_handle' => $creator->tiktok_handle,
+                        'youtube_channel' => $creator->youtube_channel,
+                        'facebook_page' => $creator->facebook_page,
+                        'twitter_handle' => $creator->twitter_handle,
+                        'join_date' => $creator->created_at,
+                        'rating' => $creator->rating ?? 0,
+                        'total_reviews' => $creator->total_reviews ?? 0,
+                        'total_campaigns' => $creator->total_campaigns ?? 0,
+                        'completed_campaigns' => $creator->completed_campaigns ?? 0,
+                    ],
+                    'portfolio' => [
+                        'id' => $portfolio->id,
+                        'title' => $portfolio->title,
+                        'bio' => $portfolio->bio,
+                        'profile_picture' => $portfolio->profile_picture ? asset('storage/' . $portfolio->profile_picture) : null,
+                        'project_links' => $portfolio->project_links ?? [],
+                        'items_count' => $portfolio->items->count(),
+                        'images_count' => $portfolio->items->where('media_type', 'image')->count(),
+                        'videos_count' => $portfolio->items->where('media_type', 'video')->count(),
+                    ],
+                    'portfolio_items' => $portfolio->items->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'title' => $item->title,
+                            'description' => $item->description,
+                            'file_path' => $item->file_path,
+                            'file_url' => $item->file_url,
+                            'thumbnail_url' => $item->thumbnail_url,
+                            'media_type' => $item->media_type,
+                            'file_size' => $item->file_size,
+                            'order' => $item->order,
+                            'created_at' => $item->created_at,
+                            'updated_at' => $item->updated_at,
+                        ];
+                    }),
+                    'reviews' => []
+                ]
             ]);
 
         } catch (\Exception $e) {
@@ -702,18 +1067,4 @@ class PortfolioController extends Controller
             ], 500);
         }
     }
-
-    /**
-     * Helper method to determine media type
-     */
-    private function getMediaType(string $mimeType): string
-    {
-        if (str_starts_with($mimeType, 'image/')) {
-            return 'image';
-        }
-        if (str_starts_with($mimeType, 'video/')) {
-            return 'video';
-        }
-        return 'other';
-    }
-} 
+}

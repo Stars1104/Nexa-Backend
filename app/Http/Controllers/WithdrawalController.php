@@ -21,11 +21,11 @@ class WithdrawalController extends Controller
     {
         $user = Auth::user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can request withdrawals',
+                'message' => 'Only creators and students can request withdrawals',
             ], 403);
         }
 
@@ -212,11 +212,11 @@ class WithdrawalController extends Controller
     {
         $user = Auth::user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can access withdrawal history',
+                'message' => 'Only creators and students can access withdrawal history',
             ], 403);
         }
 
@@ -280,11 +280,11 @@ class WithdrawalController extends Controller
     {
         $user = Auth::user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can access withdrawal details',
+                'message' => 'Only creators and students can access withdrawal details',
             ], 403);
         }
 
@@ -347,11 +347,11 @@ class WithdrawalController extends Controller
     {
         $user = Auth::user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can cancel withdrawals',
+                'message' => 'Only creators and students can cancel withdrawals',
             ], 403);
         }
 
@@ -416,11 +416,11 @@ class WithdrawalController extends Controller
     {
         $user = Auth::user();
 
-        // Check if user is a creator
-        if (!$user->isCreator()) {
+        // Check if user is a creator or student
+        if (!$user->isCreator() && !$user->isStudent()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only creators can access withdrawal statistics',
+                'message' => 'Only creators and students can access withdrawal statistics',
             ], 403);
         }
 

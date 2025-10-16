@@ -32,6 +32,8 @@ use App\Http\Controllers\DeliveryMaterialController;
 use App\Http\Controllers\Admin\BrandRankingController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\StudentController;
+use App\Http\Controllers\AccountController;
+
 
 // Health check endpoint
 Route::get('/health', function () {
@@ -202,11 +204,24 @@ Route::middleware(['auth:sanctum', 'throttle:notifications'])->group(function ()
     
 });
 
-// Portfolio routes (available to all authenticated creators)
+// Account management routes
 Route::middleware(['auth:sanctum'])->group(function () {
+    Route::post('/account/remove', [AccountController::class, 'removeAccount']);
+});
+
+// Public account restoration routes (no authentication required)
+Route::group([],function () {
+    Route::post('/account/restore', [AccountController::class, 'restoreAccount']);
+    Route::post('/account/check-removed', [AccountController::class, 'checkRemovedAccount']);
+});
+
+// Portfolio routes (available to all authenticated creators)
+Route::middleware(['auth:sanctum', 'user.status'])->group(function () {
     Route::get('/portfolio', [PortfolioController::class, 'show'])->middleware(['throttle:dashboard']);
-    Route::put('/portfolio/profile', [PortfolioController::class, 'updateProfile']);
+    Route::post('/portfolio/profile', [PortfolioController::class, 'updateProfile']);
     Route::post('/portfolio/media', [PortfolioController::class, 'uploadMedia']);
+    Route::post('/portfolio/test-upload', [PortfolioController::class, 'testUpload']); // Test endpoint
+    Route::post('/portfolio/test-update', [PortfolioController::class, 'testUpdate']); // Test update endpoint
     Route::put('/portfolio/items/{item}', [PortfolioController::class, 'updateItem']);
     Route::delete('/portfolio/items/{item}', [PortfolioController::class, 'deleteItem']);
     Route::post('/portfolio/reorder', [PortfolioController::class, 'reorderItems']);
@@ -442,3 +457,7 @@ Route::post('/google/auth', [GoogleController::class, 'handleGoogleWithRole'])
     ->name('google.auth');
 
 // Auth routes already included at the top
+
+
+Route::post('/account/checked', [AccountController::class, 'checkAccount']);
+
