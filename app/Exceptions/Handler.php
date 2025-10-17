@@ -43,7 +43,7 @@ class Handler extends ExceptionHandler
 
                 return new JsonResponse([
                     'success' => false,
-                    'message' => 'The given data was invalid.',
+                    'message' => 'Os dados fornecidos são inválidos.',
                     'errors' => $e->errors()
                 ], 422);
             }

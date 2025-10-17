@@ -142,31 +142,31 @@ class RegisteredUserController extends Controller
                 'boolean'
             ],
         ], [
-            'name.required' => 'The name field is required.',
-            'name.min' => 'The name must be at least 2 characters.',
-            'name.regex' => 'The name can only contain letters, spaces, hyphens, dots, and apostrophes.',
-            'email.required' => 'The email field is required.',
-            'email.email' => 'Please enter a valid email address.',
-            'email.unique' => 'This email address is already registered.',
-            'email.regex' => 'Please enter a valid email address format.',
-            'password.required' => 'The password field is required.',
-            'password.confirmed' => 'The password confirmation does not match.',
-            'password.min' => 'The password must be at least 8 characters.',
-            'password.max' => 'The password may not be greater than 128 characters.',
-            'role.in' => 'The selected role is invalid.',
-            'whatsapp.regex' => 'Please enter a valid phone number.',
-            'avatar_url.image' => 'The avatar must be an image file.',
-            'avatar_url.mimes' => 'The avatar must be a file of type: jpeg, png, jpg, gif, webp.',
-            'avatar_url.max' => 'The avatar may not be greater than 2MB.',
-            'avatar_url.dimensions' => 'The avatar must be between 100x100 and 1024x1024 pixels.',
-            'bio.min' => 'The bio must be at least 10 characters.',
-            'bio.max' => 'The bio may not be greater than 1000 characters.',
-            'company_name.min' => 'The company name must be at least 2 characters.',
-            'company_name.regex' => 'The company name can only contain letters, numbers, spaces, hyphens, dots, and ampersands.',
-            'gender.in' => 'The selected gender is invalid.',
-            'state.regex' => 'The state can only contain letters, spaces, and hyphens.',
-            'language.in' => 'The selected language is not supported.',
-            'has_premium.boolean' => 'The premium status must be true or false.',
+            'name.required' => 'O nome é obrigatório.',
+            'name.min' => 'O nome deve ter pelo menos 2 caracteres.',
+            'name.regex' => 'O nome só pode conter letras, espaços, hífens, pontos e apóstrofos.',
+            'email.required' => 'O e-mail é obrigatório.',
+            'email.email' => 'Informe um endereço de e-mail válido.',
+            'email.unique' => 'Este e-mail já está cadastrado.',
+            'email.regex' => 'Informe um formato de e-mail válido.',
+            'password.required' => 'A senha é obrigatória.',
+            'password.confirmed' => 'A confirmação de senha não confere.',
+            'password.min' => 'A senha deve ter pelo menos 8 caracteres.',
+            'password.max' => 'A senha não pode ter mais de 128 caracteres.',
+            'role.in' => 'O papel selecionado é inválido.',
+            'whatsapp.regex' => 'Informe um número de telefone válido.',
+            'avatar_url.image' => 'O avatar deve ser um arquivo de imagem.',
+            'avatar_url.mimes' => 'O avatar deve ser do tipo: jpeg, png, jpg, gif, webp.',
+            'avatar_url.max' => 'O avatar não pode ser maior que 2MB.',
+            'avatar_url.dimensions' => 'O avatar deve ter entre 100x100 e 1024x1024 pixels.',
+            'bio.min' => 'A bio deve ter pelo menos 10 caracteres.',
+            'bio.max' => 'A bio não pode ter mais de 1000 caracteres.',
+            'company_name.min' => 'O nome da empresa deve ter pelo menos 2 caracteres.',
+            'company_name.regex' => 'O nome da empresa só pode conter letras, números, espaços, hífens, pontos e &.',
+            'gender.in' => 'O gênero selecionado é inválido.',
+            'state.regex' => 'O estado só pode conter letras, espaços e hífens.',
+            'language.in' => 'O idioma selecionado não é suportado.',
+            'has_premium.boolean' => 'O status premium deve ser verdadeiro ou falso.',
         ]);
 
         // Additional custom validation logic
@@ -298,7 +298,7 @@ class RegisteredUserController extends Controller
             
             if (in_array(strtolower($domain), $disallowedDomains)) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
-                    'email' => ['Temporary email addresses are not allowed.']
+                    'email' => ['Endereços de e-mail temporários não são permitidos.']
                 ]);
             }
         }
@@ -309,16 +309,16 @@ class RegisteredUserController extends Controller
             $errors = [];
 
             if (!preg_match('/[A-Z]/', $password)) {
-                $errors[] = 'Password must contain at least one uppercase letter.';
+                $errors[] = 'A senha deve conter ao menos uma letra maiúscula.';
             }
             if (!preg_match('/[a-z]/', $password)) {
-                $errors[] = 'Password must contain at least one lowercase letter.';
+                $errors[] = 'A senha deve conter ao menos uma letra minúscula.';
             }
             if (!preg_match('/[0-9]/', $password)) {
-                $errors[] = 'Password must contain at least one number.';
+                $errors[] = 'A senha deve conter ao menos um número.';
             }
             if (!preg_match('/[^A-Za-z0-9]/', $password)) {
-                $errors[] = 'Password must contain at least one special character.';
+                $errors[] = 'A senha deve conter ao menos um caractere especial.';
             }
 
             if (!empty($errors)) {
@@ -333,7 +333,7 @@ class RegisteredUserController extends Controller
             $phone = $this->formatPhoneNumber($request->whatsapp);
             if (strlen($phone) < 10 || strlen($phone) > 15) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
-                    'whatsapp' => ['Phone number must be between 10 and 15 digits.']
+                    'whatsapp' => ['O número de telefone deve ter entre 10 e 15 dígitos.']
                 ]);
             }
         }
@@ -346,7 +346,7 @@ class RegisteredUserController extends Controller
             foreach ($forbiddenWords as $word) {
                 if (stripos($bio, $word) !== false) {
                     throw \Illuminate\Validation\ValidationException::withMessages([
-                        'bio' => ['The bio contains inappropriate content.']
+                        'bio' => ['A bio contém conteúdo impróprio.']
                     ]);
                 }
             }
