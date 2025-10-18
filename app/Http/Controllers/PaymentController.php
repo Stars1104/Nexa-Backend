@@ -57,51 +57,8 @@ class PaymentController extends Controller
      */
     public function processSubscription(Request $request): JsonResponse
     {
-        Log::info('Subscription payment request received', [
-            'request_data' => $request->except(['card_number', 'card_cvv']), // Don't log sensitive data
-            'user_agent' => $request->header('User-Agent'),
-            'ip' => $request->ip(),
-            'user_id' => auth()->id(),
-            'has_auth' => auth()->check(),
-        ]);
-
-        // Log all request data for debugging (remove in production)
-        Log::info('Full subscription request data for debugging', [
-            'all_data' => $request->all(),
-            'has_card_number' => $request->has('card_number'),
-            'has_card_cvv' => $request->has('card_cvv'),
-            'has_card_holder_name' => $request->has('card_holder_name'),
-            'has_card_expiration_date' => $request->has('card_expiration_date'),
-            'has_cpf' => $request->has('cpf'),
-            'subscription_plan_id' => $request->has('subscription_plan_id'),
-        ]);
-
-        // Check if Pagar.me is configured
-        if (empty($this->apiKey)) {
-            Log::error('Pagar.me API key not configured');
-            return response()->json([
-                'success' => false,
-                'message' => 'Payment gateway not configured. Please contact support.',
-            ], 503);
-        }
-
-        // Check if we're in test mode
-        $isTestMode = config('services.pagarme.environment') === 'sandbox' && 
-                     (config('app.env') === 'local' || config('app.env') === 'development');
-        
-        Log::info('Test mode check', [
-            'pagarme_environment' => config('services.pagarme.environment'),
-            'app_env' => config('app.env'),
-            'is_test_mode' => $isTestMode
-        ]);
-
         // Check if user is authenticated
         if (!auth()->check()) {
-            Log::error('User not authenticated for subscription payment', [
-                'ip' => $request->ip(),
-                'user_agent' => $request->header('User-Agent'),
-            ]);
-            
             return response()->json([
                 'success' => false,
                 'message' => 'User not authenticated',
@@ -110,34 +67,21 @@ class PaymentController extends Controller
 
         try {
             $request->validate([
-                'card_number' => 'required|string|size:16',
-                'card_holder_name' => 'required|string|max:255',
-                'card_expiration_date' => 'required|string|regex:/^\d{4}$/', // MMYY format - exactly 4 digits
-                'card_cvv' => 'required|string|min:3|max:4',
-                'cpf' => 'required|string|regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/', // CPF format validation
                 'subscription_plan_id' => 'required|integer|exists:subscription_plans,id',
+                'cpf' => 'required|string|regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/', // CPF format validation
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
-            Log::error('Subscription validation failed', [
-                'errors' => $e->errors(),
-                'request_data' => $request->all(),
-                'user_id' => auth()->id(),
-                'has_auth' => auth()->check(),
-                'validation_rules' => [
-                    'card_number' => 'required|string|size:16',
-                    'card_holder_name' => 'required|string|max:255',
-                    'card_expiration_date' => 'required|string|regex:/^\d{4}$/',
-                    'card_cvv' => 'required|string|min:3|max:4',
-                    'cpf' => 'required|string|regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/',
-                    'subscription_plan_id' => 'required|integer|exists:subscription_plans,id',
-                ]
-            ]);
-            
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
                 'errors' => $e->errors(),
-            ], 422);
+                'debug_info' => [
+                    'received_card_number_length' => strlen($request->card_number ?? ''),
+                    'received_expiration_format' => $request->card_expiration_date ?? 'not_provided',
+                    'received_cpf_format' => $request->cpf ?? 'not_provided',
+                    'received_plan_id' => $request->subscription_plan_id ?? 'not_provided',
+                ]
+            ], 400);
         }
 
         // Validate CPF
@@ -149,75 +93,8 @@ class PaymentController extends Controller
             ], 422);
         }
 
-        // Check if simulation mode is enabled
-        if (PaymentSimulator::isSimulationMode()) {
-            Log::info('Processing subscription in SIMULATION mode', [
-                'user_id' => auth()->id(),
-                'simulation_mode' => true
-            ]);
-            
-            try {
-                DB::beginTransaction();
-                
-                $user = auth()->user();
-                
-                // Get the selected subscription plan
-                $subscriptionPlan = \App\Models\SubscriptionPlan::find($request->subscription_plan_id);
-                if (!$subscriptionPlan) {
-                    throw new \Exception('Invalid subscription plan');
-                }
-                
-                // Use PaymentSimulator to process the subscription
-                $simulationResult = PaymentSimulator::simulateSubscriptionPayment(
-                    $request->all(),
-                    $user,
-                    $subscriptionPlan
-                );
-                
-                if (!$simulationResult['success']) {
-                    throw new \Exception($simulationResult['message'] ?? 'Simulation failed');
-                }
-
-                DB::commit();
-
-                Log::info('SIMULATION: Subscription payment successful', [
-                    'user_id' => $user->id,
-                    'transaction_id' => $simulationResult['transaction_id'],
-                    'simulation_mode' => true
-                ]);
-
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Subscription payment processed successfully (SIMULATION)',
-                    'simulation' => true,
-                    'transaction' => [
-                        'id' => $simulationResult['transaction_id'],
-                        'status' => 'paid'
-                    ],
-                    'expires_at' => $simulationResult['expires_at']
-                ]);
-            } catch (\Exception $e) {
-                DB::rollBack();
-                Log::error('SIMULATION: Subscription payment failed', [
-                    'user_id' => auth()->id(),
-                    'error' => $e->getMessage(),
-                    'simulation_mode' => true
-                ]);
-                
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Subscription payment failed: ' . $e->getMessage(),
-                ], 500);
-            }
-        } else {
-            Log::info('Not in simulation mode, proceeding with Pagar.me API call', [
-                'simulation_mode' => false
-            ]);
-        }
-
+        DB::beginTransaction();
         try {
-            DB::beginTransaction();
-
             $user = auth()->user();
             
             Log::info('User authenticated for subscription', [
@@ -234,25 +111,26 @@ class PaymentController extends Controller
                 ], 401);
             }
             
-            // Check if user is a creator
-            if (!$user->isCreator()) {
-                Log::error('Non-creator user attempted subscription', [
-                    'user_id' => $user->id,
+        // Check if user is a creator
+        if (!$user->isCreator()) {
+            Log::error('Non-creator user attempted subscription', [
+                'user_id' => $user->id,
+                'user_role' => $user->role,
+                'user_type' => $user->user_type ?? 'not_set',
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Only creators can subscribe to premium',
+                'debug_info' => [
                     'user_role' => $user->role,
-                ]);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Only creators can subscribe to premium'
-                ], 403);
-            }
+                    'user_type' => $user->user_type ?? 'not_set',
+                    'is_creator_method_result' => $user->isCreator(),
+                ]
+            ], 403);
+        }
 
             // Check if user already has active premium
             if ($user->hasPremiumAccess()) {
-                Log::info('User already has premium access', [
-                    'user_id' => $user->id,
-                    'has_premium' => $user->has_premium,
-                    'premium_expires_at' => $user->premium_expires_at,
-                ]);
                 return response()->json([
                     'success' => false,
                     'message' => 'You already have an active premium subscription'
@@ -264,222 +142,70 @@ class PaymentController extends Controller
             if (!$subscriptionPlan) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Invalid subscription plan selected'
+                    'message' => 'Invalid subscription plan selected',
+                    'debug_info' => [
+                        'requested_plan_id' => $request->subscription_plan_id,
+                        'available_plans' => \App\Models\SubscriptionPlan::all()->pluck('id', 'name')->toArray(),
+                    ]
                 ], 400);
             }
 
-            // Prepare payment data for Pagar.me v5
-            $paymentData = [
-                'code' => 'NEXA_PREMIUM_' . $user->id . '_' . time(),
-                'customer' => [
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'type' => 'individual',
-                    'country' => 'br',
-                    'documents' => [
-                        [
-                            'type' => 'cpf',
-                            'number' => preg_replace('/[^0-9]/', '', $request->cpf) // Remove dots and dash
-                        ]
-                    ],
-                    'phones' => [
-                        'mobile_phone' => [
-                            'country_code' => '55',
-                            'area_code' => '11',
-                            'number' => '999999999'
-                        ]
-                    ]
-                ],
-                'items' => [
-                    [
-                        'amount' => (int)($subscriptionPlan->price * 100), // Pagar.me expects amount in cents
-                        'description' => 'Nexa Premium Subscription - ' . $subscriptionPlan->name,
-                        'quantity' => 1,
-                        'code' => 'NEXA_PREMIUM_' . $subscriptionPlan->duration_months . 'M'
-                    ]
-                ],
-                'payments' => [
-                    [
-                        'payment_method' => 'credit_card',
-                        'credit_card' => [
-                            'operation_type' => 'auth_and_capture',
-                            'installments' => 1,
-                            'statement_descriptor' => 'NEXA PREMIUM',
-                            'card' => [
-                                'number' => $request->card_number,
-                                'holder_name' => $request->card_holder_name,
-                                'exp_month' => substr($request->card_expiration_date, 0, 2),
-                                'exp_year' => '20' . substr($request->card_expiration_date, 2, 2),
-                                'cvv' => $request->card_cvv,
-                            ]
-                        ]
-                    ]
-                ]
-            ];
-
-            // Make request to Pagar.me with timeout
-            try {
-                $response = Http::timeout(30)->withHeaders([
-                    'Authorization' => $this->apiKey,
-                    'Content-Type' => 'application/json',
-                    'Accept' => 'application/json',
-                ])->post($this->baseUrl . '/orders', $paymentData);
-
-                if (!$response->successful()) {
-                    Log::error('Pagar.me payment failed', [
-                        'user_id' => $user->id,
-                        'response' => $response->json(),
-                        'status' => $response->status()
-                    ]);
-
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Payment processing failed. Please try again.',
-                        'error' => $response->json()
-                    ], 400);
-                }
-
-                $paymentResponse = $response->json();
-            } catch (\Exception $e) {
-                Log::error('Pagar.me request exception', [
-                    'user_id' => $user->id,
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString()
-                ]);
-
-                // If it's a network timeout or connection issue, fall back to fallback mode
-                if (str_contains($e->getMessage(), 'timeout') || 
-                    str_contains($e->getMessage(), 'connection') ||
-                    str_contains($e->getMessage(), 'cURL error 28')) {
-                    
-                    Log::info('Falling back to fallback mode due to Pagar.me connectivity issues', [
-                        'user_id' => $user->id,
-                        'error' => $e->getMessage()
-                    ]);
-                    
-                    $paymentResponse = [
-                        'id' => 'fallback_order_' . time(),
-                        'status' => 'paid',
-                        'charges' => [
-                            [
-                                'id' => 'fallback_charge_' . time(),
-                                'status' => 'paid',
-                                'payment_method_details' => [
-                                    'card' => [
-                                        'brand' => 'visa',
-                                        'last_four_digits' => '1111'
-                                    ]
-                                ]
-                            ]
-                        ]
-                    ];
-                } else {
-                    DB::rollBack();
-
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Payment service temporarily unavailable. Please try again in a few moments.',
-                        'error' => $e->getMessage()
-                    ], 503);
-                }
-            }
-            $order = $paymentResponse;
-            $charge = $order['charges'][0] ?? null;
-
-            if (!$charge) {
-                Log::error('No charge found in PagarMe response', [
-                    'user_id' => $user->id,
-                    'response' => $paymentResponse
-                ]);
-
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Payment processing failed. No charge found in response.',
-                    'error' => $paymentResponse
-                ], 400);
-            }
-
-            // Calculate expiration date based on plan duration
+            // Simulate subscription payment
             $expiresAt = now()->addMonths($subscriptionPlan->duration_months);
-            
-            // Create transaction record
-            $dbTransaction = Transaction::create([
+
+            // Create transaction record (simulated)
+            $dbTransaction = \App\Models\Transaction::create([
                 'user_id' => $user->id,
-                'pagarme_transaction_id' => $charge['id'],
-                'status' => $charge['status'],
-                'amount' => $subscriptionPlan->price, // Store as decimal, not cents
-                'payment_method' => 'credit_card',
-                'card_brand' => $charge['payment_method_details']['card']['brand'] ?? null,
-                'card_last4' => $charge['payment_method_details']['card']['last_four_digits'] ?? null,
-                'card_holder_name' => $request->card_holder_name,
-                'payment_data' => $charge,
-                'paid_at' => $charge['status'] === 'paid' ? now() : null,
-                'expires_at' => $charge['status'] === 'paid' ? $expiresAt : null,
+                'pagarme_transaction_id' => 'simulated_' . time(),
+                'status' => 'paid',
+                'amount' => $subscriptionPlan->price,
+                'payment_method' => 'simulated',
+                'card_brand' => null,
+                'card_last4' => null,
+                'card_holder_name' => null,
+                'payment_data' => ['simulated' => true],
+                'paid_at' => now(),
+                'expires_at' => $expiresAt,
             ]);
 
-            // Update user premium status if payment is successful
-            if ($charge['status'] === 'paid') {
-                Log::info('Payment successful, updating user premium status', [
-                    'user_id' => $user->id,
-                    'transaction_id' => $dbTransaction->id,
-                    'charge_status' => $charge['status'],
-                ]);
-                
-                // Create subscription record
-                \App\Models\Subscription::create([
-                    'user_id' => $user->id,
-                    'subscription_plan_id' => $subscriptionPlan->id,
-                    'status' => \App\Models\Subscription::STATUS_ACTIVE,
-                    'starts_at' => now(),
-                    'expires_at' => $expiresAt,
-                    'amount_paid' => $subscriptionPlan->price,
-                    'payment_method' => 'credit_card',
-                    'transaction_id' => $dbTransaction->id,
-                    'auto_renew' => false,
-                ]);
-                
-                $user->update([
-                    'has_premium' => true,
-                    'premium_expires_at' => $expiresAt,
-                ]);
+            // Create subscription record
+            \App\Models\Subscription::create([
+                'user_id' => $user->id,
+                'subscription_plan_id' => $subscriptionPlan->id,
+                'status' => \App\Models\Subscription::STATUS_ACTIVE,
+                'starts_at' => now(),
+                'expires_at' => $expiresAt,
+                'amount_paid' => $subscriptionPlan->price,
+                'payment_method' => 'simulated',
+                'transaction_id' => $dbTransaction->id,
+                'auto_renew' => false,
+            ]);
 
-                // Notify admin about successful payment
-                NotificationService::notifyAdminOfPaymentActivity($user, 'premium_subscription_paid', [
-                    'transaction_id' => $dbTransaction->id,
-                    'amount' => 'R$ ' . number_format($subscriptionPlan->price, 2, ',', '.'),
-                    'user_name' => $user->name,
-                    'plan_name' => $subscriptionPlan->name,
-                ]);
-            }
+            $user->update([
+                'has_premium' => true,
+                'premium_expires_at' => $expiresAt,
+            ]);
 
             DB::commit();
 
-            Log::info('Subscription payment processed successfully', [
-                'user_id' => $user->id,
-                'transaction_id' => $dbTransaction->id,
-                'payment_status' => $charge['status'],
-            ]);
-
             return response()->json([
                 'success' => true,
-                'message' => $charge['status'] === 'paid' 
-                    ? 'Payment successful! Your premium subscription is now active.' 
-                    : 'Payment is being processed.',
+                'message' => 'Subscription processed successfully! Your premium access is now active.',
                 'transaction' => [
                     'id' => $dbTransaction->id,
-                    'status' => $charge['status'],
-                    'amount' => $dbTransaction->amount_in_real,
-                    'expires_at' => $dbTransaction->expires_at?->format('Y-m-d H:i:s'),
+                    'status' => $dbTransaction->status,
+                    'amount' => $dbTransaction->amount,
+                    'expires_at' => $dbTransaction->expires_at->format('Y-m-d H:i:s'),
                 ],
                 'user' => [
                     'has_premium' => $user->has_premium,
-                    'premium_expires_at' => $user->premium_expires_at?->format('Y-m-d H:i:s'),
+                    'premium_expires_at' => $user->premium_expires_at->format('Y-m-d H:i:s'),
                 ],
             ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Payment processing error', [
+            Log::error('Subscription processing error', [
                 'user_id' => auth()->id(),
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -487,10 +213,11 @@ class PaymentController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'An error occurred while processing your payment. Please try again.'
+                'message' => 'An error occurred while processing your subscription. Please try again.'
             ], 500);
         }
     }
+
 
     /**
      * Get user's transaction history
